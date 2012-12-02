@@ -13,7 +13,8 @@
 #define VALID_ALG_NUM 11
 
 /* Error codes */
-#define EXIT_CIPHER_ERR -5
+#define EXIT_CIPHER_ERR -6
+#define EXIT_IN_OUT_ERR -5
 #define EXIT_OUTFILE_ERR -4
 #define EXIT_INFILE_ERR -3
 #define EXIT_PASS_ERR -2
