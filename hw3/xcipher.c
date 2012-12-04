@@ -23,9 +23,16 @@ void init_xcrypt_params(struct xcrypt_params *ptr){
 	ptr->keylen = 0;
 	
 	for(i = 0; i < 8; i++){
-		ptr->flags &= ~(1 << i)
+		ptr->flags &= ~(1 << i);
 	}
 	/* Return when done */
+	return;
+}
+
+void free_xcrypt_params(struct xcrypt_params *ptr){
+	free(ptr->outfile);
+	free(ptr->infile);
+	free(ptr->keybuf);
 	return;
 }
 
@@ -55,6 +62,12 @@ void init_xcrypt_params(struct xcrypt_params *ptr){
 		algs[10] = "twofish";
 		/* Return when done */
 		return;
+	}
+	void free_valid_algorithms(char *algs[]){
+		int i;
+		for(i = 0; i< VALID_ALG_NUM; i++){
+			free(algs[i]);
+		}
 	}
 #endif
 
@@ -198,12 +211,31 @@ int is_same_file(char *file1, char *file2){
 
 /* Set Encryption Mode on Flag */
 void set_encrypt_flag(struct xcrypt_params *ptr){
-	
+	// Is encrypt set already?
+	// flag: [---- ---?]
+	if(ptr->flags & (1 << 0)){
+		// If it is, do nothing
+		return;
+	} else { // set flag for encryption
+		// flag: [---- ---1]
+		ptr->flags |= (1 << 0);
+		return;
+	}
 }
 
 /* Set Decryption Mode on Flag */
 void set_decrypt_flag(struct xcrypt_params *ptr){
-	
+	// Is decrypt set already?
+	// flag: [---- ---?]
+	if(ptr->flags & (1 << 0)){
+		// If it is set, switch to decrypt mode
+		// flag: [---- ---0]
+		ptr->flags &= ~(1 << 0);
+		return;
+	} else {
+		// Do nothing
+		return;
+	}
 }
 
 /* - - - - - Main Method - - - - - */
@@ -226,6 +258,8 @@ int main(int argc, char *argv[]){
 		char *valid_algs[VALID_ALG_NUM];
 		init_valid_algorithms(valid_algs);
 	#endif
+	/* Init xcrypt params struct */
+	init_xcrypt_params(params);
 	
 	/* Parse out and check all parameters */
 	opt = 0; enc = 0; dec = 0; cip = 0; pas = 0; hlp = 0;
@@ -243,6 +277,10 @@ int main(int argc, char *argv[]){
 			case 'p':
 				if(strlen(optarg) > PASS_MAX){
 					fprintf(stderr, "Error: Password cannot exceed %d characters\n", PASS_MAX);
+					#ifdef EXTRA_CREDIT
+						free_valid_algorithms(valid_algs);
+					#endif
+					free_xcrypt_params(params);
 					exit(EXIT_PASS_ERR);
 				} else {
 					strcpy(params->keybuf, optarg);
@@ -259,6 +297,8 @@ int main(int argc, char *argv[]){
 					}
 					if(alg_num == -1){
 						fprintf(stderr, "Error: Invalid algorithm argument specified for -c\n");
+						free_valid_algorithms(valid_algs);
+						free_xcrypt_params(params);
 						exit(EXIT_CIPHER_ERR);
 					}
 				#else
@@ -267,6 +307,10 @@ int main(int argc, char *argv[]){
 			default:
 				fprintf(stderr, "Error: Invalid execution\n");
 				fprintf(stderr,"Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
+				#ifdef EXTRA_CREDIT
+					free_valid_algorithms(valid_algs);
+				#endif
+				free_xcrypt_params(params);
 				exit(EXIT_INPUT_ERR);
 		}
 	}
@@ -294,12 +338,18 @@ int main(int argc, char *argv[]){
 			printf("   khazad   :  KHAZAD Cipher Algorithm\n");
 			printf("   serpent  :  Serpent Cipher Algorithm\n");
 			printf("   twofish  :  Twofish Cipher Algorithm\n");
+			free_valid_algorithms(valid_algs);
 		#endif
+		free_xcrypt_params(params);
 		exit(EXIT_HELP);
 	} else if(argc >= 4){
 		/* More error checking */
 		if((strcmp(argv[passArgNum], argv[argc-2]) == 0) && passArgNum != 0){
 			fprintf(stderr, "Error: No <outfile> specified\n");
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
 			exit(EXIT_INPUT_ERR);
 		}
 		/* Take <infile> and <outfile> */
@@ -308,67 +358,110 @@ int main(int argc, char *argv[]){
 		
 		/* Error check <infile> */
 		if(!(is_valid_file(params->infile))){
-			free(params->infile);
-			free(params->outfile);
-			free(params->keybuf);
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
 			exit(EXIT_INFILE_ERR);
 		}
 		
 		/* Error check <outfile> */
 		if(!(is_valid_file(params->outfile))){
-			free(params->infile);
-			free(params->outfile);
-			free(params->keybuf);
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
 			exit(EXIT_OUTFILE_ERR);
 		}
 		
 		/* Error check same file */
 		if(is_same_file(params->infile, params->outfile)){
-			free(params->infile);
-			free(params->outfile);
-			free(params->keybuf);
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
 			exit(EXIT_IN_OUT_ERR);
 		}
 		
 		/* Encrypt or Decrypt Conditions */
 		if(dec == 0 && enc == 1){
 			// Do bitshift of flags for params
+			set_encrypt_flag(params);
 			// get keylen from strlen(params->keybuf)
+			params->keylen = strlen(params->keybuf);
 			// Pass Params to system call
+			xcrypt_rv = 0;
+			xcrypt_rv = syscall(__NR_xcrypt, params);
 			// Return and output finished
+			// Free all memory used
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
 			// Exit from program
+			exit(EXIT_SUCCESS);
 		} else if(dec == 1 && enc == 0){
-		
-		} else if(dec == 1 && enc == 1){
-		
-		} else { //dec == 0 && enc == 0
+			// Do bitshift of flags for params
+			set_decrypt_flag(params);
+			// get keylen from strlen(params->keybuf)
+			params->keylen = strlen(params->keybuf);
+			// Pass Params to system call
+			xcrypt_rv = 0;
+			xcrypt_rv = syscall(__NR_xcrypt, params);
+			// Return and output finished
 			
-		}
-		
-		////////////////////////////////
-		/* Main execution starts here */
-		////////////////////////////////
-		
+			// Free all memory used
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
+			// Exit from program
+			exit(EXIT_SUCCESS);
+		} else if(dec == 1 && enc == 1){
+			// Error cannot both decrypt and encrypt
+			fprintf(stderr, "Error: Cannot both encrypt and decrypt\n");
+			fprintf(stderr, "Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
+			// Free all memory used
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
+			exit(EXIT_INPUT_ERR);
+		} else { //dec == 0 && enc == 0
+			// Error must either decrypt or encrypt
+			fprintf(stderr, "Error: Must either encrypt or decrypt\n");
+			fprintf(stderr, "Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
+			// Free all memory used
+			#ifdef EXTRA_CREDIT
+				free_valid_algorithms(valid_algs);
+			#endif
+			free_xcrypt_params(params);
+			exit(EXIT_INPUT_ERR);
+		}	
 		
 	} else {
 		/* Invalid input error */
 		fprintf(stderr, "Error: Invalid execution\n");
 		fprintf(stderr, "Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
+		#ifdef EXTRA_CREDIT
+			free_valid_algorithms(valid_algs);
+		#endif
+		fre_xcrypt_params(params);
 		exit(EXIT_INPUT_ERR);
 	}
 	
 	/////////////////////////
 	/*  EXAMPLE CODE HERE  */
 	/////////////////////////
-	params_ptr = (void *) params;
+	//params_ptr = (void *) params;
 	
-	printf("Test return: %s\n", params->infile);
+	//printf("Test return: %s\n", params->infile);
 	
-	
-	xcrypt_rv = 0;
+	//xcrypt_rv = 0;
   	//xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
 	//printf("system call returned with %d\n", xcrypt_rv);
 	
 	//free(params->infile);
-	exit(xcrypt_rv);
+	//exit(xcrypt_rv);
+	exit(EXIT_SUCCESS);
 }
