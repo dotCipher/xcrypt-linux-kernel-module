@@ -1,5 +1,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <string.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,17 +9,24 @@
 #include "sys_xcrypt.h"
 #include "xcipher.h"
 
-void init_xcrypt_params(struct xcrypt_params *ptr){
+// -1 = Failure  0 = Success
+int init_xcrypt_params(struct xcrypt_params *ptr){
 	int i;
 	/* Initialize and clear all params */
-	ptr->outfile = malloc(sizeof((char)*OUTFILE_MAX));
-	memset(ptr->outfile, 0, sizeof(strlen(ptr->outfile)));
+	ptr = (struct xcrypt_params *)malloc(sizeof(struct xcrypt_params));
 	
-	ptr->infile = malloc(sizeof((char)*INFILE_MAX));
-	memset(ptr->infile, 0, sizeof(strlen(ptr->infile)));
-	
-	ptr->keybuf = malloc(sizeof((char)*PASS_MAX));
-	memset(ptr->keybuf, 0, sizeof(strlen(ptr->keybuf)));
+	if((ptr->outfile = (char *)calloc(OUTFILE_MAX, sizeof(char))) == NULL){
+		perror("Error allocating memory for outfile parameter: ");
+		return -1;
+	}
+	if((ptr->infile = (char *)calloc(INFILE_MAX, sizeof(char))) == NULL){
+		perror("Error allocating memory for infile parameter: ");
+		return -1;
+	}
+	if((ptr->keybuf = (char *)calloc(PASS_MAX, sizeof(char))) == NULL){
+		perror("Error allocating memory for keybuf parameter: ");
+		return -1;
+	}
 	
 	ptr->keylen = 0;
 	
@@ -26,27 +34,27 @@ void init_xcrypt_params(struct xcrypt_params *ptr){
 		ptr->flags &= ~(1 << i);
 	}
 	/* Return when done */
-	return;
+	return 0;
 }
 
 void free_xcrypt_params(struct xcrypt_params *ptr){
 	free(ptr->outfile);
 	free(ptr->infile);
 	free(ptr->keybuf);
+	free(ptr);
 	return;
 }
 
 #ifdef EXTRA_CREDIT
-	void init_valid_algorithms(char *algs[]){
+	// -1 = Failure   0 = Success
+	int init_valid_algorithms(char *algs[]){
 		int i;
 		/* Intialize and clear the whole array */
 		for(i = 0; i < VALID_ALG_NUM; i++){
-			if((algs[i] = (char*)malloc(sizeof((char)*16))) != NULL){
-				memset(algs[i], 0, sizeof((char)*16));
-			} else {
+			if((algs[i] = (char*)calloc(16, sizeof(char))) == NULL){
 				perror("Error allocating memory for valid_algorithms: ");
-				return;
-			}	
+				return -1;
+			}
 		}
 		/* Set all ciphers here */
 		algs[0] = "aes";
@@ -61,7 +69,7 @@ void free_xcrypt_params(struct xcrypt_params *ptr){
 		algs[9] = "serpent";
 		algs[10] = "twofish";
 		/* Return when done */
-		return;
+		return 0;
 	}
 	void free_valid_algorithms(char *algs[]){
 		int i;
@@ -155,8 +163,8 @@ int is_same_file(char *file1, char *file2){
 		lstat(file1, buf1);
 		lstat(file2, buf2);
 		// Both NOT Symlinks?
-		if(!(file1->st_mode & S_IFLNK) 
-		&& !(file2->st_mode & S_IFLNK)){
+		if(!(buf1->st_mode & S_IFLNK) 
+		&& !(buf2->st_mode & S_IFLNK)){
 			// Hardlines to same file?
 			if((buf1->st_dev == buf2->st_dev) 
 			&& (buf1->st_ino == buf2->st_ino)){
@@ -168,7 +176,7 @@ int is_same_file(char *file1, char *file2){
 			}
 		// Both ARE Symlinks?
 		} else if((buf1->st_mode & S_IFLNK)
-		&& (buf2->st_mode & S_IFLNK){
+		&& (buf2->st_mode & S_IFLNK)){
 			stat(file1, buf1);
 			stat(file2, buf2);
 			// Are they to the same file?
@@ -251,15 +259,21 @@ int main(int argc, char *argv[]){
 	/* Booleans for flags */
 	int opt, enc, dec, cip, pas, hlp;
 	/* Error checking flags */
-	int pasArgNum = -1;
+	int passArgNum = -1;
 	/* Valid ciphers */
 	#ifdef EXTRA_CREDIT
 		int alg_num = -1;
 		char *valid_algs[VALID_ALG_NUM];
-		init_valid_algorithms(valid_algs);
+		if(init_valid_algorithms(valid_algs) == -1){
+			fprintf(stderr,"Error during initialization of valid algorithms\n");
+			exit(EXIT_CIPHER_ERR);
+		}
 	#endif
 	/* Init xcrypt params struct */
-	init_xcrypt_params(params);
+	if(init_xcrypt_params(params) == -1){
+		fprintf(stderr,"Error during initialization of xcrypt params\n");
+		exit(EXIT_IN_OUT_ERR);
+	}
 	
 	/* Parse out and check all parameters */
 	opt = 0; enc = 0; dec = 0; cip = 0; pas = 0; hlp = 0;
@@ -284,7 +298,7 @@ int main(int argc, char *argv[]){
 					exit(EXIT_PASS_ERR);
 				} else {
 					strcpy(params->keybuf, optarg);
-					pasArgNum = optind-1;
+					passArgNum = optind-1;
 					pas = 1;
 					break;
 				}
@@ -342,7 +356,7 @@ int main(int argc, char *argv[]){
 		#endif
 		free_xcrypt_params(params);
 		exit(EXIT_HELP);
-	} else if(argc >= 4){
+	} else if(argc > 4){
 		/* More error checking */
 		if((strcmp(argv[passArgNum], argv[argc-2]) == 0) && passArgNum != 0){
 			fprintf(stderr, "Error: No <outfile> specified\n");
@@ -390,9 +404,11 @@ int main(int argc, char *argv[]){
 			// get keylen from strlen(params->keybuf)
 			params->keylen = strlen(params->keybuf);
 			// Pass Params to system call
+			params_ptr = (void *)params;
 			xcrypt_rv = 0;
-			xcrypt_rv = syscall(__NR_xcrypt, params);
+			//xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
 			// Return and output finished
+			
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
 				free_valid_algorithms(valid_algs);
@@ -406,8 +422,9 @@ int main(int argc, char *argv[]){
 			// get keylen from strlen(params->keybuf)
 			params->keylen = strlen(params->keybuf);
 			// Pass Params to system call
+			params_ptr = (void *)params;
 			xcrypt_rv = 0;
-			xcrypt_rv = syscall(__NR_xcrypt, params);
+			//xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
 			// Return and output finished
 			
 			// Free all memory used
@@ -446,7 +463,7 @@ int main(int argc, char *argv[]){
 		#ifdef EXTRA_CREDIT
 			free_valid_algorithms(valid_algs);
 		#endif
-		fre_xcrypt_params(params);
+		free_xcrypt_params(params);
 		exit(EXIT_INPUT_ERR);
 	}
 	
