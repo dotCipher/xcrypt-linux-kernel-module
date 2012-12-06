@@ -34,7 +34,7 @@ void kfile_close(struct file* file){
 	filp_close(file, NULL);
 }
 
-int kfile_read(struct file* file, unsigned long offset, unsigned char* 
+int kfile_read(struct file* file, unsigned long long offset, unsigned char* 
 data, unsigned int size){
 	mm_segment_t oldfs;
 	int ret;
@@ -48,7 +48,7 @@ data, unsigned int size){
 	return ret;
 }
 
-int kfile_write(struct file* file, unsigned long offset, unsigned char* 
+int kfile_write(struct file* file, unsigned long long offset, unsigned char* 
 data, unsigned int size){
 	mm_segment_t oldfs;
 	int ret;
@@ -97,13 +97,11 @@ asmlinkage int sys_xcrypt(void *args){
 	//int error;
 	//char *buf;
 	//mm_segment_t old_fs;
-	/*
 	char *k_infile;
 	char *k_outfile;
 	char *k_keybuf;
 	int k_keylen;
 	unsigned char k_flags;
-	*/
 	
 	// Initialize starter variables
 	//old_fs = get_fs();
@@ -111,6 +109,14 @@ asmlinkage int sys_xcrypt(void *args){
 	
 	// First dereference the void pointer to our struct
 	struct xcrypt_params *params = (struct xcrypt_params *)args;
+	
+	// Alloc memory for struct
+	
+	// Construct the struct
+	k_infile = params->infile;
+	k_outfile = params->outfile;
+	k_keybuf = params->k_keybuf;
+	
 	
 	// Check the infile
 	// access_ok(type, addr, size)
