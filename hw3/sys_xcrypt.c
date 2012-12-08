@@ -1,7 +1,6 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/syscalls.h>
 #include <linux/fcntl.h>
 #include <linux/linkage.h>
 #include <linux/moduleloader.h>
@@ -12,7 +11,7 @@
 #include <asm/uaccess.h>
 #include <asm/segment.h>
 
-#include "sys_xcrypt.h"
+#include "common.h"
 
 struct file* kfile_open(const char* path, int flags, int permissions){
 	struct file* filp = NULL;
@@ -67,73 +66,65 @@ int kfile_sync(struct file* file){
 	return 0;
 }
 
+// -1 = Failure   0 = Success
+int kmem_alloc_params(struct xcrypt_params *ptr){
+	ptr = kmalloc(sizeof(struct xcrypt_params), GFP_KERNEL);
+	if(!ptr){
+		return -1;
+	} else {
+		return 0;
+	}
+	ptr->infile = kmalloc(INFILE_MAX, GFP_KERNEL);
+	if(!ptr->infile){
+		return -1;
+	} else {
+		return 0;
+	}
+	ptr->outfile = kmalloc(OUTFILE_MAX, GFP_KERNEL);
+	if(!ptr->outfile){
+		return -1;
+	} else {
+		return 0;
+	}
+	ptr->keybuf = kmalloc(PASS_MAX, GFP_KERNEL);
+	if(!ptr->keybuf){
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
 asmlinkage extern long (*sysptr)(void *arg);
 
 asmlinkage int sys_xcrypt(void *args){
-	/*
-	sys_xcrypt(infile, outfile, keybuf, keylen, flags)
-	where "infile" is the name of an input file to encrypt or decrypt, "outfile"
-	is the output file, "keybuf" is a buffer holding the cipher key, "keylen" is
-	the length of that buffer, and "flags" determine if you're encrypting or
-	decrypting.
-	*/
-	/* Both input and output files can be passed as relative or absolute */
-	/* ERRORS TO CHECK FOR */
-	/*
-	- missing arguments passed
-	- null arguments
-	- pointers to bad addresses
-	- len and buf don't match
-	- invalid flags
-	- input file cannot be opened or read
-	- output file cannot be opened or written
-	- input or output files are not regular, or they point to the same file
-	- trying to decrypt a file w/ the wrong key (what errno should you return?)
-	- ANYTHING else you can think of (the more error checking you do, the better)
-	*/
-	
 	// Declare the needed variables
-	//int fd;
-	//int error;
-	//char *buf;
-	//mm_segment_t old_fs;
 	char *k_infile;
 	char *k_outfile;
 	char *k_keybuf;
 	int k_keylen;
 	unsigned char k_flags;
 	
-	// Initialize starter variables
-	//old_fs = get_fs();
-	//set_fs(KERNEL_DS);
+	// Check if the void pointer is from userspace is readable
+	if(!access_ok(VERIFY_READ, args, sizeof(args))){
+		return -EFAULT;
+	}
+	// Alloc memory for the parts of the struct 
+	//   that thevoid pointer is pointing too
 	
 	// First dereference the void pointer to our struct
-	struct xcrypt_params *params = (struct xcrypt_params *)args;
-	
-	// Alloc memory for struct
+	kparams = (struct xcrypt_params *)args;
+	kparams->infile = getname(
 	
 	// Construct the struct
 	k_infile = params->infile;
 	k_outfile = params->outfile;
-	k_keybuf = params->k_keybuf;
+	k_keybuf = params->keybuf;
 	
 	
 	// Check the infile
 	// access_ok(type, addr, size)
 	// __strncpy_from_user(dst, src, count)
-	return access_ok(VERIFY_READ, args, sizeof(*args));
-	//if(access_ok(VERIFY_READ, params->infile, strnlen_user(params->infile, (long)256))){
-		
-	//}
-	
-	// Check the outfile
-	
-	// Check the keybuf
-	
-	// Check the keylen
-	
-	// Check the flags
-	
+	return 0;
 }
 
 static int __init init_sys_xcrypt(void){
