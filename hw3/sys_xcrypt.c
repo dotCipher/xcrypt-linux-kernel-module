@@ -7,6 +7,7 @@
 #include <linux/errno.h>
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
+#include <linux/slab.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -109,21 +110,9 @@ asmlinkage int sys_xcrypt(void *args){
 		return -EFAULT;
 	}
 	// Alloc memory for the parts of the struct 
-	//   that thevoid pointer is pointing too
-	
-	// First dereference the void pointer to our struct
-	kparams = (struct xcrypt_params *)args;
-	kparams->infile = getname(
-	
-	// Construct the struct
-	k_infile = params->infile;
-	k_outfile = params->outfile;
-	k_keybuf = params->keybuf;
-	
-	
-	// Check the infile
-	// access_ok(type, addr, size)
-	// __strncpy_from_user(dst, src, count)
+	//   that the void pointer is pointing too
+	k_infile = getname( ((struct xcrypt_params *)args)->infile );
+
 	return 0;
 }
 
