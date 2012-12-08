@@ -8,73 +8,6 @@
 
 #include "common.h"
 
-// -1 = Failure   0 = Success
-int init_xcrypt_params(struct xcrypt_params *ptr){
-	int i;
-	/* Initialize and clear all params */
-	ptr = (struct xcrypt_params *)malloc(sizeof(struct xcrypt_params));
-	if((ptr->outfile = (char *)calloc(OUTFILE_MAX, sizeof(char))) == NULL){
-		perror("Error allocating memory for outfile parameter: ");
-		return -1;
-	}
-	if((ptr->infile = (char *)calloc(INFILE_MAX, sizeof(char))) == NULL){
-		perror("Error allocating memory for infile parameter: ");
-		return -1;
-	}
-	if((ptr->keybuf = (char *)calloc(PASS_MAX, sizeof(char))) == NULL){
-		perror("Error allocating memory for keybuf parameter: ");
-		return -1;
-	}
-	ptr->keylen = 0;
-	for(i = 0; i < 8; i++){
-		ptr->flags &= ~(1 << i);
-	}
-	/* Return when done */
-	return 0;
-}
-
-void free_xcrypt_params(struct xcrypt_params *ptr){
-	free(ptr->outfile);
-	free(ptr->infile);
-	free(ptr->keybuf);
-	free(ptr);
-	return;
-}
-
-#ifdef EXTRA_CREDIT
-	// -1 = Failure   0 = Success
-	int init_valid_algorithms(char *algs[]){
-		int i;
-		/* Initialize and clear the whole array */
-		for(i = 0; i < VALID_ALG_NUM; i++){
-			if((algs[i] = (char *)calloc(16, sizeof(char))) == NULL){
-				perror("Error allocating memory for valid algs: ");
-				return -1;
-			}
-		}
-		/* Set all ciphers here */
-		algs[0] = "aes";
-		algs[1] = "anubis";
-		algs[2] = "arc4";
-		algs[3] = "blowfish";
-		algs[4] = "cast5";
-		algs[5] = "cast6";
-		algs[6] = "des";
-		algs[7] = "des3_ede";
-		algs[8] = "khazad";
-		algs[9] = "serpent";
-		algs[10] = "twofish";
-		/* Return when done */
-		return 0;
-	}
-	void free_valid_algorithms(char *algs[]){
-		int i;
-		for(i = 0; i < VALID_ALG_NUM; i++){
-			free(algs[i]);
-		}
-	}
-#endif
-
 /* Handles checking if path is valid file	*/
 /*   0 = Valid File							*/
 /*   -1 = Invalid File						*/
@@ -242,6 +175,23 @@ void set_decrypt_flag(struct xcrypt_params *ptr){
 	}
 }
 
+void set_algs(char *algs[]){
+	/* Set all ciphers here */
+	algs[0] = "aes";
+	algs[1] = "anubis";
+	algs[2] = "arc4";
+	algs[3] = "blowfish";
+	algs[4] = "cast5";
+	algs[5] = "cast6";
+	algs[6] = "des";
+	algs[7] = "des3_ede";
+	algs[8] = "khazad";
+	algs[9] = "serpent";
+	algs[10] = "twofish";
+	/* Return when done */
+	return;
+}
+
 /* - - - - - Main Method - - - - - */
 int main(int argc, char *argv[]){
 	/* Basic counter */
@@ -256,20 +206,49 @@ int main(int argc, char *argv[]){
 	int opt, enc, dec, cip, pas, hlp;
 	/* Error checking flags */
 	int passArgNum = -1;
-	/* Valid ciphers */
+	/* Declare valid ciphers */
 	#ifdef EXTRA_CREDIT
 		int alg_num = -1;
-		char *valid_algs[VALID_ALG_NUM];
-		if(init_valid_algorithms(valid_algs) == -1){
-			fprintf(stderr,"Error during initialization of valid algorithms\n");
-			exit(EXIT_CIPHER_ERR);
-		}
+		char *algs[VALID_ALG_NUM];
 	#endif
-	/* Init xcrypt params struct */
-	if(init_xcrypt_params(params) == -1){
-		fprintf(stderr,"Error during initialization of xcrypt params\n");
+	/* Init xcrypt params */
+	if((params = malloc(sizeof *params)) == NULL){
+		perror("Error allocating memory for struct: ");
 		exit(EXIT_IN_OUT_ERR);
 	}
+	if((params->outfile = (char *)calloc(OUTFILE_MAX, sizeof(char))) == NULL){
+		perror("Error allocating memory for outfile: ");
+		free(params);
+		exit(EXIT_OUTFILE_ERR);
+	}
+	if((params->infile = (char *)calloc(INFILE_MAX, sizeof(char))) == NULL){
+		perror("Error allocating memory for infile: ");
+		free(params->outfile);
+		free(params);
+		exit(EXIT_INFILE_ERR);
+	}
+	if((params->keybuf = (char *)calloc(PASS_MAX, sizeof(char))) == NULL){
+		perror("Error allocating memory for keybuf parameter: ");
+		free(params->infile); free(params->outfile);
+		free(params);
+		exit(EXIT_PASS_ERR);
+	}
+	params->keylen = 0;
+	for(i = 0; i < 8; i++){
+		params->flags &= ~(1 << i);
+	}
+	
+	/* Init valid ciphers */
+	#ifdef EXTRA_CREDIT
+		for(i = 0; i < VALID_ALG_NUM; i++){
+			if((algs[i] = (char *)calloc(32, sizeof(char))) == NULL){
+				perror("Error allocating memory for valid algs: ");
+				free(params->infile); free(params->outfile);
+				free(params->keybuf); free(params);
+				exit(EXIT_CIPHER_ERR);
+			}
+		}
+	#endif
 	
 	/* Parse out and check all parameters */
 	opt = 0; enc = 0; dec = 0; cip = 0; pas = 0; hlp = 0;
@@ -288,9 +267,12 @@ int main(int argc, char *argv[]){
 				if(strlen(optarg) > PASS_MAX){
 					fprintf(stderr, "Error: Password cannot exceed %d characters\n", PASS_MAX);
 					#ifdef EXTRA_CREDIT
-						free_valid_algorithms(valid_algs);
+						for(i = 0; i < VALID_ALG_NUM; i++){
+							free(algs[i]);
+						}
 					#endif
-					free_xcrypt_params(params);
+					free(params->infile); free(params->outfile);
+					free(params->keybuf); free(params);
 					exit(EXIT_PASS_ERR);
 				} else {
 					strcpy(params->keybuf, optarg);
@@ -301,14 +283,17 @@ int main(int argc, char *argv[]){
 			case 'c':
 				#ifdef EXTRA_CREDIT
 					for(i = 0; i < VALID_ALG_NUM; i++){
-						if(strcmp(optarg, valid_algs[i]) == 1){
+						if(strcmp(optarg, algs[i]) == 1){
 							alg_num = i;
 						}
 					}
 					if(alg_num == -1){
 						fprintf(stderr, "Error: Invalid algorithm argument specified for -c\n");
-						free_valid_algorithms(valid_algs);
-						free_xcrypt_params(params);
+						for(i = 0; i < VALID_ALG_NUM; i++){
+							free(algs[i]);
+						}
+						free(params->infile); free(params->outfile);
+						free(params->keybuf); free(params);
 						exit(EXIT_CIPHER_ERR);
 					}
 				#else
@@ -318,9 +303,12 @@ int main(int argc, char *argv[]){
 				fprintf(stderr, "Error: Invalid execution\n");
 				fprintf(stderr,"Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
 				#ifdef EXTRA_CREDIT
-					free_valid_algorithms(valid_algs);
+					for(i = 0; i < VALID_ALG_NUM; i++){
+						free(algs[i]);
+					}
 				#endif
-				free_xcrypt_params(params);
+				free(params->infile); free(params->outfile);
+				free(params->keybuf); free(params);
 				exit(EXIT_INPUT_ERR);
 		}
 	}
@@ -348,18 +336,24 @@ int main(int argc, char *argv[]){
 			printf("   khazad   :  KHAZAD Cipher Algorithm\n");
 			printf("   serpent  :  Serpent Cipher Algorithm\n");
 			printf("   twofish  :  Twofish Cipher Algorithm\n");
-			free_valid_algorithms(valid_algs);
+			for(i = 0; i < VALID_ALG_NUM; i++){
+				free(algs[i]);
+			}
 		#endif
-		free_xcrypt_params(params);
+		free(params->infile); free(params->outfile);
+		free(params->keybuf); free(params);
 		exit(EXIT_HELP);
 	} else if(argc > 4){
 		/* More error checking */
 		if((strcmp(argv[passArgNum], argv[argc-2]) == 0) && passArgNum != 0){
 			fprintf(stderr, "Error: No <outfile> specified\n");
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			exit(EXIT_INPUT_ERR);
 		}
 		/* Take <infile> and <outfile> */
@@ -369,27 +363,36 @@ int main(int argc, char *argv[]){
 		/* Error check <infile> */
 		if(!(is_valid_file(params->infile))){
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			exit(EXIT_INFILE_ERR);
 		}
 		
 		/* Error check <outfile> */
 		if(!(is_valid_file(params->outfile))){
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			exit(EXIT_OUTFILE_ERR);
 		}
 		
 		/* Error check same file */
 		if(is_same_file(params->infile, params->outfile)){
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			exit(EXIT_IN_OUT_ERR);
 		}
 		
@@ -407,9 +410,12 @@ int main(int argc, char *argv[]){
 			
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			// Exit from program
 			exit(EXIT_SUCCESS);
 		} else if(dec == 1 && enc == 0){
@@ -425,9 +431,12 @@ int main(int argc, char *argv[]){
 			
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			// Exit from program
 			exit(EXIT_SUCCESS);
 		} else if(dec == 1 && enc == 1){
@@ -436,9 +445,12 @@ int main(int argc, char *argv[]){
 			fprintf(stderr, "Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			exit(EXIT_INPUT_ERR);
 		} else { //dec == 0 && enc == 0
 			// Error must either decrypt or encrypt
@@ -446,9 +458,12 @@ int main(int argc, char *argv[]){
 			fprintf(stderr, "Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
-				free_valid_algorithms(valid_algs);
+				for(i = 0; i < VALID_ALG_NUM; i++){
+					free(algs[i]);
+				}
 			#endif
-			free_xcrypt_params(params);
+			free(params->infile); free(params->outfile);
+			free(params->keybuf); free(params);
 			exit(EXIT_INPUT_ERR);
 		}	
 		
@@ -457,9 +472,12 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "Error: Invalid execution\n");
 		fprintf(stderr, "Usage: %s [OPTIONS] [-p PASSWORD] <infile> <outfile>\n", argv[0]);
 		#ifdef EXTRA_CREDIT
-			free_valid_algorithms(valid_algs);
+			for(i = 0; i < VALID_ALG_NUM; i++){
+				free(algs[i]);
+			}
 		#endif
-		free_xcrypt_params(params);
+		free(params->infile); free(params->outfile);
+		free(params->keybuf); free(params);
 		exit(EXIT_INPUT_ERR);
 	}
 	
@@ -476,5 +494,4 @@ int main(int argc, char *argv[]){
 	
 	//free(params->infile);
 	//exit(xcrypt_rv);
-	exit(EXIT_SUCCESS);
 }
