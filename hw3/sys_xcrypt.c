@@ -106,20 +106,51 @@ asmlinkage int sys_xcrypt(void *args){
 		return -EFAULT;
 	}
 	// Alloc memory for void pointer
-	
+	if(!(k_args = kmalloc(params_len, GFP_KERNEL))){
+		return -ENOMEM;
+	}
+	if(copy_from_user(k_args, args, params_len)){
+		kfree(k_args);
+		return -EINVAL;
+	}
 	
 	// Alloc memory for the parts of the struct 
 	//   that the void pointer is pointing too
 	if(!(k_infile = kmalloc(INFILE_MAX, GFP_KERNEL))){
+		kfree(k_args);
 		return -ENOMEM;
 	}
 	if(!(k_outfile = kmalloc(OUTFILE_MAX, GFP_KERNEL))){
+		kfree(k_args); kfree(k_infile);
 		return -ENOMEM;
 	}
 	if(!(k_keybuf = kmalloc(PASS_MAX, GFP_KERNEL))){
+		kfree(k_args); kfree(k_infile);
+		kfree(k_outfile);
 		return -ENOMEM;
 	}
+	
 	// Get the values held by the struct
+	k_infile = getname(((struct xcrypt_params *)k_args)->infile);
+	k_outfile = getname(((struct xcrypt_params *)k_args)->outfile);
+	if(!access_ok(VERIFY_READ, ((struct xcrypt_params *)k_args)->keybuf,
+	((struct xcrypt_params *)k_args)->keylen)){
+		kfree(k_args); kfree(k_infile);
+		kfree(k_outfile); kfree(k_keybuf);
+		return -EFAULT;
+	}
+	if(copy_from_user(k_keybuf, ((struct xcrypt_params *)k_args)->keybuf,
+	((struct xcrypt_params*)k_args)->keylen)){
+		kfree(k_args); kfree(k_infile);
+		kfree(k_outfile); kfree(k_keybuf);
+		return -EINVAL;
+	}
+	if(copy_from_user(k_flags, ((struct xcrypt_params *)k_args)->flags,
+	sizeof(unsigned char))){
+		kfree(k_args); kfree(k_infile);
+		kfree(k_outfile); kfree(k_keybuf);
+		return -EINVAL;
+	}
 	/*
 	if(strncpy_from_user(k_infile, 
 	((struct xcrypt_params *)args)->infile, INFILE_MAX)){
@@ -145,8 +176,9 @@ asmlinkage int sys_xcrypt(void *args){
 	// Dissect the void pointer
 	printk(KERN_CRIT "k_infile = %s\n", k_infile);
 	printk(KERN_CRIT "k_outfile = %s\n", k_outfile);
-	printf(KERN_CRIT "k_keybuf = %s\n", k_keybuf);
-	printf(KERN_CRIT "k_keylen = %d\n", k_keylen);
+	printk(KERN_CRIT "k_keybuf = %s\n", k_keybuf);
+	printk(KERN_CRIT "k_keylen = %d\n", k_keylen);
+	printk(KERN_CRIT "k_flags = %d\n", k_flags);
 		
 	return 0;
 }
