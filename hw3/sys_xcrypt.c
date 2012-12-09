@@ -8,9 +8,9 @@
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
 #include <linux/slab.h>
-
-#include <asm/uaccess.h>
-#include <asm/segment.h>
+#include <linux/uaccess.h>
+#include <linux/types.h>
+#include <linux/file.h>
 
 #include "common.h"
 
@@ -72,47 +72,82 @@ int kmem_alloc_params(struct xcrypt_params *ptr){
 	ptr = kmalloc(sizeof(struct xcrypt_params), GFP_KERNEL);
 	if(!ptr){
 		return -1;
-	} else {
-		return 0;
 	}
 	ptr->infile = kmalloc(INFILE_MAX, GFP_KERNEL);
 	if(!ptr->infile){
 		return -1;
-	} else {
-		return 0;
 	}
 	ptr->outfile = kmalloc(OUTFILE_MAX, GFP_KERNEL);
 	if(!ptr->outfile){
 		return -1;
-	} else {
-		return 0;
 	}
 	ptr->keybuf = kmalloc(PASS_MAX, GFP_KERNEL);
 	if(!ptr->keybuf){
 		return -1;
-	} else {
-		return 0;
 	}
+	return 0;
 }
 
 asmlinkage extern long (*sysptr)(void *arg);
 
 asmlinkage int sys_xcrypt(void *args){
 	// Declare the needed variables
+	void *k_args;
 	char *k_infile;
 	char *k_outfile;
 	char *k_keybuf;
 	int k_keylen;
 	unsigned char k_flags;
-	
+	int params_len = sizeof(struct xcrypt_params);
+	printk(KERN_CRIT "--- Entering kerning module sys_xcrypt ---\n");
+
 	// Check if the void pointer is from userspace is readable
-	if(!access_ok(VERIFY_READ, args, sizeof(args))){
+	if(!access_ok(VERIFY_READ, args, params_len)){
 		return -EFAULT;
 	}
+	// Alloc memory for void pointer
+	
+	
 	// Alloc memory for the parts of the struct 
 	//   that the void pointer is pointing too
-	k_infile = getname( ((struct xcrypt_params *)args)->infile );
-
+	if(!(k_infile = kmalloc(INFILE_MAX, GFP_KERNEL))){
+		return -ENOMEM;
+	}
+	if(!(k_outfile = kmalloc(OUTFILE_MAX, GFP_KERNEL))){
+		return -ENOMEM;
+	}
+	if(!(k_keybuf = kmalloc(PASS_MAX, GFP_KERNEL))){
+		return -ENOMEM;
+	}
+	// Get the values held by the struct
+	/*
+	if(strncpy_from_user(k_infile, 
+	((struct xcrypt_params *)args)->infile, INFILE_MAX)){
+		return -EFAULT;
+	}
+	if(strncpy_from_user(k_outfile, 
+	((struct xcrypt_params *)args)->outfile, OUTFILE_MAX)){
+		return -EFAULT;
+	}
+	if(strncopy_from_user(k_keybuf,
+	((struct xcrypt_params *)args)->keybuf, PASS_MAX)){
+		return -EFAULT;
+	}
+	if(copy_from_user(k_keylen,
+	((struct xcrypt_params *)args)->keylen, sizeof(int))){
+		return -EFAULT;
+	}
+	if(copy_from_user(k_flags,
+	((struct xcrypt_params *)args)->flags, sizeof(unsigned char))){
+		return -EFAULT;
+	}
+	*/
+	// Dissect the void pointer
+	printk(KERN_CRIT "k_infile = %s\n", k_infile);
+	printk(KERN_CRIT "k_outfile = %s\n", k_outfile);
+	printf(KERN_CRIT "k_keybuf = %s\n", k_keybuf);
+	printf(KERN_CRIT "k_keylen = %d\n", k_keylen);
+		
 	return 0;
 }
 

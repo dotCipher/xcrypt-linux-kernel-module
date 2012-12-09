@@ -1,5 +1,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -110,7 +111,7 @@ int is_same_file(char *file1, char *file2){
 			stat(file2, buf2);
 			// Are they to the same file?
 			if((buf1->st_dev == buf2->st_dev)
-			&& (buf1->st_dev == buf2->st_dev)){
+			&& (buf1->st_ino == buf2->st_ino)){
 				free(buf1); free(buf2);
 				return -1;
 			} else {
@@ -192,6 +193,25 @@ void set_algs(char *algs[]){
 	return;
 }
 
+/* Handles checking if file exists
+* as well as proper permissions on file
+* SUCCESS CODE(S):
+* 0 = Success (File DOES NOT exist)
+* ERROR CODE(S):
+* 1 = File does exist
+* 2 = File does exist & no permissions
+*/
+int fileExists(char *fname){
+	struct stat buf;
+	errno = 0;
+	int chk = stat(fname, &buf);
+	if(errno!=0){
+		return (chk == 0);
+	} else {
+		return 2;
+	}
+}
+
 /* - - - - - Main Method - - - - - */
 int main(int argc, char *argv[]){
 	/* Basic counter */
@@ -200,6 +220,7 @@ int main(int argc, char *argv[]){
 	int xcrypt_rv;
 	/* All Params Stored in Structure */
     struct xcrypt_params *params;
+    int outfile_fd;
     /* Void Pointer to be passed to System Call */
 	void *params_ptr;
 	/* Booleans for flags */
@@ -276,8 +297,12 @@ int main(int argc, char *argv[]){
 					exit(EXIT_PASS_ERR);
 				} else {
 					strcpy(params->keybuf, optarg);
+					params->keylen = strlen(params->keybuf)+1;
 					passArgNum = optind-1;
 					pas = 1;
+					
+					printf("Password accepted...\n");
+					
 					break;
 				}
 			case 'c':
@@ -344,6 +369,9 @@ int main(int argc, char *argv[]){
 		free(params->keybuf); free(params);
 		exit(EXIT_HELP);
 	} else if(argc > 4){
+		
+		printf("ARGC = %d\n", argc);
+		
 		/* More error checking */
 		if((strcmp(argv[passArgNum], argv[argc-2]) == 0) && passArgNum != 0){
 			fprintf(stderr, "Error: No <outfile> specified\n");
@@ -361,6 +389,7 @@ int main(int argc, char *argv[]){
 		strcpy(params->outfile, argv[argc-1]);
 		
 		/* Error check <infile> */
+		errno = 0;
 		if(!(is_valid_file(params->infile))){
 			#ifdef EXTRA_CREDIT
 				for(i = 0; i < VALID_ALG_NUM; i++){
@@ -369,11 +398,18 @@ int main(int argc, char *argv[]){
 			#endif
 			free(params->infile); free(params->outfile);
 			free(params->keybuf); free(params);
+			fprintf(stderr, "Error: Infile invalid\n");
 			exit(EXIT_INFILE_ERR);
 		}
 		
 		/* Error check <outfile> */
-		if(!(is_valid_file(params->outfile))){
+		if((fileExists(params->outfile))!=1){
+			// outfile does not exist
+			// Create it
+			errno = 0;
+			outfile_fd = open(params->outfile, O_RDWR | O_CREAT | O_TRUNC | O_APPEND, S_IWRITE);
+		}
+		if(!(is_valid_file(params->outfile)) || outfile_fd == -1){
 			#ifdef EXTRA_CREDIT
 				for(i = 0; i < VALID_ALG_NUM; i++){
 					free(algs[i]);
@@ -381,7 +417,10 @@ int main(int argc, char *argv[]){
 			#endif
 			free(params->infile); free(params->outfile);
 			free(params->keybuf); free(params);
+			fprintf(stderr, "Error: Outfile invalid\n");
 			exit(EXIT_OUTFILE_ERR);
+		} else {
+			close(outfile_fd);
 		}
 		
 		/* Error check same file */
@@ -393,6 +432,7 @@ int main(int argc, char *argv[]){
 			#endif
 			free(params->infile); free(params->outfile);
 			free(params->keybuf); free(params);
+			fprintf(stderr, "Error: infile and outfile are the same\n");
 			exit(EXIT_IN_OUT_ERR);
 		}
 		
@@ -405,8 +445,15 @@ int main(int argc, char *argv[]){
 			// Pass Params to system call
 			params_ptr = (void *)params;
 			xcrypt_rv = 0;
-			//xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
+			printf("Encrypting file...\n");
+			xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
+			
 			// Return and output finished
+			if(xcrypt_rv == 0){
+				printf("syscall returned with %d\n", xcrypt_rv);
+			} else {
+				printf("syscall returned with %d\n (errno = %d)\n", xcrypt_rv, errno);
+			}
 			
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
@@ -417,6 +464,7 @@ int main(int argc, char *argv[]){
 			free(params->infile); free(params->outfile);
 			free(params->keybuf); free(params);
 			// Exit from program
+			printf("Done!\n");
 			exit(EXIT_SUCCESS);
 		} else if(dec == 1 && enc == 0){
 			// Do bitshift of flags for params
@@ -426,8 +474,15 @@ int main(int argc, char *argv[]){
 			// Pass Params to system call
 			params_ptr = (void *)params;
 			xcrypt_rv = 0;
-			//xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
+			printf("Decrypting the file...\n");
+			xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
+			
 			// Return and output finished
+			if(xcrypt_rv == 0){
+				printf("syscall returned with %d\n", xcrypt_rv);
+			} else {
+				printf("syscall returned with %d\n (errno = %d)\n", xcrypt_rv, errno);
+			}
 			
 			// Free all memory used
 			#ifdef EXTRA_CREDIT
@@ -438,6 +493,7 @@ int main(int argc, char *argv[]){
 			free(params->infile); free(params->outfile);
 			free(params->keybuf); free(params);
 			// Exit from program
+			printf("Done!\n");
 			exit(EXIT_SUCCESS);
 		} else if(dec == 1 && enc == 1){
 			// Error cannot both decrypt and encrypt
