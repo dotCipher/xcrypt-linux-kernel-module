@@ -298,6 +298,7 @@ int main(int argc, char *argv[]){
 				} else {
 					strcpy(params->keybuf, optarg);
 					params->keylen = strlen(params->keybuf)+1;
+					printf("Keylength is: %d\n", params->keylen);
 					passArgNum = optind-1;
 					pas = 1;
 					
