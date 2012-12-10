@@ -322,8 +322,6 @@ int main(int argc, char *argv[]){
 						free(params->keybuf); free(params);
 						exit(EXIT_CIPHER_ERR);
 					}
-				#else
-					goto default;
 				#endif
 			default:
 				fprintf(stderr, "Error: Invalid execution\n");

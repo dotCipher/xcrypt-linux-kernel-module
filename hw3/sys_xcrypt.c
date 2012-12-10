@@ -11,6 +11,9 @@
 #include <linux/uaccess.h>
 #include <linux/types.h>
 #include <linux/file.h>
+#include <linux/crypto.h>
+#include <linux/mm.h>
+#include <linux/scatterlist.h>
 
 #include "common.h"
 
@@ -82,6 +85,54 @@ int is_same_kfile(struct file* file1, struct file* file2){
 	}
 }
 
+struct crypto_blkcipher *alloc_xcipher(void){
+	return crypto_alloc_blkcipher("cbc(aes)", 0, CRYPTO_ALG_ASYNC);
+}
+
+int xcrypt_cipher(char *key, int keylen, char *to_buffer, 
+char *from_buffer, int buffer_len, int enc_flag){
+	char *algo = "cbc(aes)";
+	struct crypto_blockcipher *tfm = alloc_xcipher();
+	struct blkcipher_desc desc = { .tfm = tfm };
+	int ret;
+	void *iv;
+	
+	ret = 1;
+	
+	if(IS_ERR(tfm)){
+		return PTR_ERR(tfm);
+	}
+	ret = crypto_cipher_setkey((void *)tfm, key, keylen);
+	if(ret){
+		printk(KERN_CRIT "setkey() failed\n");
+		crypto_free_tfm(tfm);
+		return ret;
+	}
+	
+	printk(KERN_CRIT "Setting iv.\n");
+	iv = crypto_blkcipher_crt(tfm)->iv;
+	memset(iv, 0, PASS_MAX);
+	
+	if(enc_flag){
+		printk(KERN_CRIT "Encrypting in xcrypt_cipher()\n");
+		ret = crypto_blkcipher_encrypt(&desc, 
+		to_buffer, from_buffer, buffer_len);
+	} else {
+		printk(KERN_CRIT "Decrypting in xcrypt_cipher()\n");
+		ret = crypto_blkcipher_decrypt(&desc,
+		to_buffer, from_buffer, buffer_len);
+	}
+	
+	crypto_free_tfm(tfm);
+	
+	if(ret < 0){
+		printk(KERN_CRIT "encryption failed");
+		return ret;
+	}
+	printk(KERN_CRIT "Returning from xcrypt_cipher()\n");
+	return 0;
+}
+
 asmlinkage extern long (*sysptr)(void *arg);
 
 asmlinkage int sys_xcrypt(void *args){
@@ -99,8 +150,8 @@ asmlinkage int sys_xcrypt(void *args){
 	long long bytes_read, bytes_write;
 	int offset_total;
 	int params_len = sizeof(struct xcrypt_params);
+	int i;
 	page_size = 4096;
-	printk(KERN_CRIT "--- Entering kerning module sys_xcrypt ---\n");
 	
 	// Check if the void pointer is from userspace is readable
 	if(!access_ok(VERIFY_READ, args, params_len)){
@@ -119,7 +170,6 @@ asmlinkage int sys_xcrypt(void *args){
 	// Keylen
 	if(!access_ok(VERIFY_READ, ((struct xcrypt_params *)k_args)->keylen,
 	sizeof(int))){
-		printk(KERN_CRIT "Kernel cant read keylength");
 		kfree(k_args);
 		return -EFAULT;
 	}
@@ -144,7 +194,6 @@ asmlinkage int sys_xcrypt(void *args){
 	// Flags
 	if(!access_ok(VERIFY_READ, ((struct xcrypt_params *)k_args)->flags,
 	sizeof(unsigned char))){
-		printk(KERN_CRIT "Kernel cant read flags");
 		kfree(k_args); kfree(k_keybuf);
 		return -EFAULT;
 	}
@@ -155,23 +204,23 @@ asmlinkage int sys_xcrypt(void *args){
 	k_outfile = getname(((struct xcrypt_params *)k_args)->outfile);
 	
 	// Debug messages
+	/*
 	printk(KERN_CRIT "k_infile = %s\n", k_infile);
 	printk(KERN_CRIT "k_outfile = %s\n", k_outfile);
 	printk(KERN_CRIT "k_keybuf = %s\n", k_keybuf);
 	printk(KERN_CRIT "k_keylen = %d\n", k_keylen);
 	printk(KERN_CRIT "k_flags = %d\n", k_flags);
+	*/
 	
 	// Clear buffer
 	if(!(buffer = (unsigned char *)kmalloc(page_size, GFP_KERNEL))){
 		kfree(k_args); kfree(k_keybuf);
 		kfree(k_infile); kfree(k_outfile);
-		printk(KERN_CRIT "Error kmallocing to_buffer\n");
 		return -ENOMEM;
 	}
 	memset(buffer, 0, page_size);
 	
 	// Errror check both files
-	printk(KERN_CRIT "Opening files...\n");
 	
 	// Open the infile 
 	if((infile = kfile_open(k_infile, 
@@ -179,7 +228,6 @@ asmlinkage int sys_xcrypt(void *args){
 		kfree(k_args); kfree(k_keybuf);
 		kfree(k_infile); kfree(k_outfile);
 		kfree(buffer);
-		printk(KERN_CRIT "Error opening infile.\n");
 		return -EINVAL;
 	}
 	
@@ -192,7 +240,6 @@ asmlinkage int sys_xcrypt(void *args){
 		// Close and unlink
 		kfile_close(infile); 
 		//kfile_unlink(infile);
-		printk(KERN_CRIT "Error opening outfile.\n");
 		return -EINVAL;
 	}
 	
@@ -207,7 +254,6 @@ asmlinkage int sys_xcrypt(void *args){
 		// Close and unlink
 		kfile_close(infile);// kfile_unlink(infile);
 		kfile_close(outfile); //kfile_unlink(outfile);
-		printk(KERN_CRIT "Infile and outfile are the same\n");
 		return -EINVAL;
 	} else {
 		// Not the same file, re open outfile 
@@ -219,31 +265,11 @@ asmlinkage int sys_xcrypt(void *args){
 			kfree(buffer);
 			// Close and unlink
 			kfile_close(infile); //kfile_unlink(infile);
-			printk(KERN_CRIT "Error re-opening outfile\n");
 			return -EINVAL;	
 		}
 	}
 
 	printk(KERN_CRIT "--- Entering Main I/O Loop ---\n");
-	// DEBUGGING simple read and write
-	/*
-	bytes_read = 0;
-	bytes_write = 0;
-	printk(KERN_CRIT "bytes_read before call: %d\n", bytes_read);
-	bytes_read = kfile_read(infile, bytes_read, buffer, page_size);
-	printk(KERN_CRIT "bytes_read after call: %d\n", bytes_read);
-	printk(KERN_CRIT "bytes_write before call: %d\n", bytes_write);
-	bytes_write = kfile_write(outfile,  bytes_write, buffer, bytes_read);
-	printk(KERN_CRIT "bytes_write after call: %d\n", bytes_write);
-			kfree(k_args); kfree(k_keybuf);
-			kfree(k_infile); kfree(k_outfile);
-			kfree(buffer);
-			// Close and Unlink file
-			kfile_close(infile); //kfile_unlink(infile);
-			kfile_close(outfile); //kfile_unlink(outfile);
-	return 0;
-	*/
-	
 	/* --- Main I/O loop --- */
 	bytes_read = -1;
 	bytes_write = 0;
@@ -251,8 +277,6 @@ asmlinkage int sys_xcrypt(void *args){
 	while(bytes_read != 0){
 		bytes_read = 0;
 		bytes_read = kfile_read(infile, offset_total, buffer, page_size);
-		printk(KERN_CRIT "bytes_read: %d\n", bytes_read);
-		printk(KERN_CRIT "offset_total after read:: %d\n", offset_total);
 		if(bytes_read < 0){
 			// Partial read encountered
 			kfree(k_args); kfree(k_keybuf);
@@ -269,18 +293,37 @@ asmlinkage int sys_xcrypt(void *args){
 				// Is the LSB set to 1?
 				if(k_flags & (1 << 8)){
 					// Encrypt buffer
-					
+					printk(KERN_CRIT "Calling xcrypt_cipher()\n");
+					i = xcrypt_cipher(k_keybuf, k_keylen, 
+					buffer, buffer, page_size, 1);
+					if(i != 0){
+						kfree(k_args); kfree(k_keybuf);
+						kfree(k_infile); kfree(k_outfile);
+						kfree(buffer);
+						// Close and Unlink file
+						kfile_close(infile); //kfile_unlink(infile);
+						kfile_close(outfile); //kfile_unlink(outfile);
+						return -EINVAL;						
+					}
 				} else {
 					// Decrypt buffer
-					
+					printk(KERN_CRIT "Calling xcrypt_cipher()\n");
+					i = xcrypt_cipher(k_keybuf, k_keylen, 
+					buffer, buffer, page_size, 0);
+					if(i != 0){
+						kfree(k_args); kfree(k_keybuf);
+						kfree(k_infile); kfree(k_outfile);
+						kfree(buffer);
+						// Close and Unlink file
+						kfile_close(infile); //kfile_unlink(infile);
+						kfile_close(outfile); //kfile_unlink(outfile);
+						return -EINVAL;						
+					}
 				}
-				//Test file I/O
 								
 				// Write buffer
-				printk(KERN_CRIT "bytes_write before: %d\n", bytes_write);
 				bytes_write = kfile_write(outfile, offset_total, 
 				buffer, page_size);
-				printk(KERN_CRIT "bytes_write after: %d\n", bytes_write);
 				offset_total += bytes_write;
 				
 				if(bytes_write == -1){
@@ -295,21 +338,40 @@ asmlinkage int sys_xcrypt(void *args){
 				}
 			 } else if(bytes_read < page_size){
 			 	// bytes_read has been read
-			 	// Is the LSB set to 1?
-			 	if(k_flags & (1 << 8)){
-			 		// Encrypt buffer
-			 		
-			 	} else {
-			 		// Decrypt buffer
-			 		
-			 	}
-			 	// Test file I/O
+				// Is the LSB set to 1?
+				if(k_flags & (1 << 8)){
+					// Encrypt buffer
+					printk(KERN_CRIT "Calling xcrypt_cipher()\n");
+					i = xcrypt_cipher(k_keybuf, k_keylen, 
+					buffer, buffer, page_size, 1);
+					if(i != 0){
+						kfree(k_args); kfree(k_keybuf);
+						kfree(k_infile); kfree(k_outfile);
+						kfree(buffer);
+						// Close and Unlink file
+						kfile_close(infile); //kfile_unlink(infile);
+						kfile_close(outfile); //kfile_unlink(outfile);
+						return -EINVAL;						
+					}
+				} else {
+					// Decrypt buffer
+					printk(KERN_CRIT "Calling xcrypt_cipher()\n");
+					i = xcrypt_cipher(k_keybuf, k_keylen, 
+					buffer, buffer, page_size, 0);
+					if(i != 0){
+						kfree(k_args); kfree(k_keybuf);
+						kfree(k_infile); kfree(k_outfile);
+						kfree(buffer);
+						// Close and Unlink file
+						kfile_close(infile); //kfile_unlink(infile);
+						kfile_close(outfile); //kfile_unlink(outfile);
+						return -EINVAL;						
+					}
+				}
 			 	
 			 	// Write buffer
-				printk(KERN_CRIT "bytes_write before: %d\n", bytes_write);
 			 	bytes_write = kfile_write(outfile, offset_total, 
 			 	buffer, bytes_read);
-				printk(KERN_CRIT "bytes_write after: %d\n", bytes_write);
 			 	offset_total += bytes_write;
 			 	
 			 	if(bytes_write == -1){

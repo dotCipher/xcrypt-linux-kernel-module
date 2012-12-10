@@ -2,10 +2,10 @@
 #define __NR_xcrypt 349
 
 /* Extra Credit Boolean */
-#define EXTRA_CREDIT 0
+//#define EXTRA_CREDIT 1
 
 /* Max values */
-#define PASS_MAX 64
+#define PASS_MAX 16
 #define INFILE_MAX 256
 #define OUTFILE_MAX 256
 
