@@ -166,6 +166,7 @@ char *from_buffer, size_t from_len){
 	int ret, i, last_byte;
 	void *iv;
 	int ivsize;
+	//size_t zero_pad = (0x10 - (from_len & 0x0f));
 	char pad[16];
 	struct blkcipher_desc desc = { .tfm = tfm };
 	ret = 1; i = 0; last_byte = 0;
@@ -178,10 +179,13 @@ char *from_buffer, size_t from_len){
 	}
 	printk(KERN_CRIT "Setting crypto cipher key\n");
 	
-	// Force remove padding
+	// Set padding
+	//memset(pad, zero_pad, zero_pad);
+	// *to_len = from_len - zero_pad;
+                    	
 	crypto_blkcipher_setkey((void *)tfm, key, keylen);
 	sg_init_table(src, 1);
-	sg_set_buf(src, from_buffer, from_len);
+	sg_set_buf(&src[0], from_buffer, from_len);
 	sg_init_table(dst, 2);
 	sg_set_buf(&dst[0], to_buffer, *to_len);
 	sg_set_buf(&dst[1], pad, sizeof(pad));
@@ -192,10 +196,11 @@ char *from_buffer, size_t from_len){
 	ivsize = crypto_blkcipher_ivsize(tfm);
 	printk(KERN_CRIT "ivsize = %d\n", ivsize);
 	
+	// TODO: Change to allow new ivs
 	memcpy(iv, iv_str, ivsize);
 	printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
 	
-	printk(KERN_CRIT "Encrypting in xcrypt_cipher()\n");
+	printk(KERN_CRIT "Decrypting in xcrypt_cipher()\n");
 	ret = crypto_blkcipher_decrypt(&desc, dst, src, from_len);
 	crypto_free_blkcipher(tfm);
 	
@@ -203,6 +208,22 @@ char *from_buffer, size_t from_len){
 		printk(KERN_CRIT "Decryption failed\n");
 		return ret;
 	}
+	
+	// Remove excess padding
+	if(from_len <= *to_len){
+		last_byte = ((char *)to_buffer)[from_len - 1];
+	} else {
+		last_byte = pad[from_len - *to_len - 1];
+	}
+	if(last_byte <= 16 && from_len >= last_byte){
+		*to_len = from_len - last_byte;
+	} else {
+		ret = 1;
+		printk(KERN_CRIT "Encountered bad padding on %d on src_len %d\n",
+		last_byte, (int)from_len);
+		return ret;
+	}
+	
 	printk(KERN_CRIT "Returning from xcrypt_cipher()\n");
 	return 0;
 }
@@ -280,17 +301,19 @@ asmlinkage int sys_xcrypt(void *args){
 	k_outfile = getname(((struct xcrypt_params *)k_args)->outfile);
 	
 	// Debug messages
+	/*
 	printk(KERN_CRIT "k_infile = %s\n", k_infile);
 	printk(KERN_CRIT "k_outfile = %s\n", k_outfile);
 	printk(KERN_CRIT "k_keybuf = %s\n", k_keybuf);
 	printk(KERN_CRIT "k_keylen = %d\n", k_keylen);
 	printk(KERN_CRIT "k_flags = %d\n", k_flags);
+	*/
 	
 	// Clear buffer
 	if(!(buffer = (unsigned char *)kmalloc(page_size, GFP_KERNEL))){
 		kfree(k_args); kfree(k_keybuf);
 		kfree(k_infile); kfree(k_outfile);
-		printk(KERN_CRIT "No memory for buffer 1");
+		printk(KERN_CRIT "No memory for buffer \n");
 		return -ENOMEM;
 	}
 	memset(buffer, 0, page_size);
@@ -362,6 +385,7 @@ asmlinkage int sys_xcrypt(void *args){
 	while(bytes_read != 0){
 		bytes_read = 0;
 		bytes_read = kfile_read(infile, offset_total, buffer, page_size);
+		printk(KERN_CRIT "bytes_read = %d\n", bytes_read);
 		if(bytes_read < 0){
 			// Partial read encountered
 			kfree(k_args); kfree(k_keybuf);
@@ -387,8 +411,6 @@ asmlinkage int sys_xcrypt(void *args){
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
-					printk(KERN_CRIT "bytes_read = %d\n", bytes_read);
-					printk(KERN_CRIT "bytes_write = %d\n", bytes_write);
 					if(i != 0){
 						kfree(k_args); kfree(k_keybuf);
 						kfree(k_infile); kfree(k_outfile);
@@ -399,7 +421,7 @@ asmlinkage int sys_xcrypt(void *args){
 						return -EINVAL;						
 					} else {
 						// Reset values
-						*dst_len = 0; src_len = 0;
+						src_len = 0;
 					}
 				} else {
 					// Decrypt buffer
@@ -412,8 +434,6 @@ asmlinkage int sys_xcrypt(void *args){
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
-					printk(KERN_CRIT "bytes_read = %d\n", bytes_read);
-					printk(KERN_CRIT "bytes_write = %d\n", bytes_write);
 					if(i != 0){
 						kfree(k_args); kfree(k_keybuf);
 						kfree(k_infile); kfree(k_outfile);
@@ -424,16 +444,19 @@ asmlinkage int sys_xcrypt(void *args){
 						return -EINVAL;						
 					} else {
 						// Reset values
-						*dst_len = 0; src_len = 0;
+						src_len = 0;
 					}
 				}
 								
 				// Lock and Write buffer
-				mutex_lock(&(outfile->f_dentry)->d_inode->i_mutex);
+				//mutex_lock(&(outfile->f_dentry)->d_inode->i_mutex);
 				bytes_write = kfile_write(outfile, offset_total, 
-					buffer, page_size);
-				mutex_unlock(&(outfile->f_dentry)->d_inode->i_mutex);
+					buffer, *dst_len);
+				//mutex_unlock(&(outfile->f_dentry)->d_inode->i_mutex);
 				offset_total += bytes_write;
+				
+				printk(KERN_CRIT "bytes_write = %d\n", bytes_write);
+				printk(KERN_CRIT "offset_total = %d\n", offset_total);
 				
 				if(bytes_write == -1){
 					// Partial write encountered?
@@ -455,13 +478,10 @@ asmlinkage int sys_xcrypt(void *args){
 					src_len = bytes_read;
 					i = 0;
 					i = xencrypt_buffer(k_keybuf, k_keylen, 
-						buffer, dst_len, 
-						buffer, src_len);
+						buffer, dst_len, buffer, src_len);
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
-					printk(KERN_CRIT "bytes_read = %d\n", bytes_read);
-					printk(KERN_CRIT "bytes_write = %d\n", bytes_write);
 					if(i != 0){
 						kfree(k_args); kfree(k_keybuf);
 						kfree(k_infile); kfree(k_outfile);
@@ -472,7 +492,7 @@ asmlinkage int sys_xcrypt(void *args){
 						return -EINVAL;						
 					} else {
 						// Reset values
-						*dst_len = 0; src_len = 0;
+						src_len = 0;
 					}
 				} else {
 					// Decrypt buffer
@@ -485,8 +505,6 @@ asmlinkage int sys_xcrypt(void *args){
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
-					printk(KERN_CRIT "bytes_read = %d\n", bytes_read);
-					printk(KERN_CRIT "bytes_write = %d\n", bytes_write);
 					if(i != 0){
 						kfree(k_args); kfree(k_keybuf);
 						kfree(k_infile); kfree(k_outfile);
@@ -497,16 +515,19 @@ asmlinkage int sys_xcrypt(void *args){
 						return -EINVAL;						
 					} else {
 						// Reset values
-						*dst_len = 0; src_len = 0;
+						src_len = 0;
 					}
 				}
 			 	
 			 	// Write buffer
-			 	mutex_lock(&(outfile->f_dentry)->d_inode->i_mutex);
+			 	//mutex_lock(&(outfile->f_dentry)->d_inode->i_mutex);
 			 	bytes_write = kfile_write(outfile, offset_total, 
-			 		buffer, bytes_read);
-			 	mutex_unlock(&(outfile->f_dentry)->d_inode->i_mutex);
+			 		buffer, *dst_len);
+			 	//mutex_unlock(&(outfile->f_dentry)->d_inode->i_mutex);
 			 	offset_total += bytes_write;
+
+				printk(KERN_CRIT "bytes_write = %d\n", bytes_write);
+				printk(KERN_CRIT "offset_total = %d\n", offset_total);
 			 	
 			 	if(bytes_write == -1){
 			 		// Partial write encountered?
@@ -519,7 +540,7 @@ asmlinkage int sys_xcrypt(void *args){
 					return -EINVAL;
 			 	}
 			 }
-			 // Clear buffer
+			 // Clear buffers
 			 memset(buffer, 0, page_size);
 		} // else bytes_read == 0, terminate while
 	}
@@ -531,7 +552,7 @@ asmlinkage int sys_xcrypt(void *args){
 	kfree(k_args); kfree(k_keybuf);
 	kfree(k_infile); kfree(k_outfile);
 	kfree(buffer);
-	printk(KERN_CRIT "- - - Exiting syscall() - - -\n");
+	printk(KERN_CRIT "- - - Exiting Main I/O Loop (Success) - - -\n");
 	return 0;
 }
 
