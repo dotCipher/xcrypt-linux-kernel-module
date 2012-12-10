@@ -176,6 +176,7 @@ void set_decrypt_flag(struct xcrypt_params *ptr){
 	}
 }
 
+#ifdef EXTRA_CREDIT
 void set_algs(char *algs[]){
 	/* Set all ciphers here */
 	algs[0] = "aes";
@@ -192,6 +193,7 @@ void set_algs(char *algs[]){
 	/* Return when done */
 	return;
 }
+#endif
 
 /* Handles checking if file exists
 * as well as proper permissions on file
@@ -369,8 +371,6 @@ int main(int argc, char *argv[]){
 		exit(EXIT_HELP);
 	} else if(argc > 4){
 		
-		printf("ARGC = %d\n", argc);
-		
 		/* More error checking */
 		if((strcmp(argv[passArgNum], argv[argc-2]) == 0) && passArgNum != 0){
 			fprintf(stderr, "Error: No <outfile> specified\n");
@@ -444,7 +444,6 @@ int main(int argc, char *argv[]){
 			// Pass Params to system call
 			params_ptr = (void *)params;
 			xcrypt_rv = 0;
-			printf("Encrypting file...\n");
 			xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
 			
 			// Return and output finished
@@ -452,6 +451,7 @@ int main(int argc, char *argv[]){
 				printf("syscall returned with %d\n", xcrypt_rv);
 			} else {
 				printf("syscall returned with %d\n (errno = %d)\n", xcrypt_rv, errno);
+				perror("SYS_XCRYPT() ERROR: ");
 			}
 			
 			// Free all memory used
@@ -473,7 +473,6 @@ int main(int argc, char *argv[]){
 			// Pass Params to system call
 			params_ptr = (void *)params;
 			xcrypt_rv = 0;
-			printf("Decrypting the file...\n");
 			xcrypt_rv = syscall(__NR_xcrypt, params_ptr);
 			
 			// Return and output finished
@@ -481,6 +480,7 @@ int main(int argc, char *argv[]){
 				printf("syscall returned with %d\n", xcrypt_rv);
 			} else {
 				printf("syscall returned with %d\n (errno = %d)\n", xcrypt_rv, errno);
+				perror("SYS_XCRYPT() ERROR: ");
 			}
 			
 			// Free all memory used

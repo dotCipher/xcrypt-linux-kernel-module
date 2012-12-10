@@ -1,7 +1,312 @@
-README: Is named README (case sensitive). 
-Describe all design decisions. 
-How do you select the key size? 
-How do you handle files that are not a multiple 
-of the cipher block encoding size?
-What do you store in the preamble?
+============ XCrypt Cipher Tool ============
+Author: Cody Moore
 
+This program allows the user to either encrypt 
+and/or decrypt any given file using algorithms 
+provided in the Crypto API Library.
+
+Please note, a password must be provided in 
+the command line arguments for successful 
+program execution.
+
+========= Description ========= 
+
+This program was made for the ease of access
+of anyone who would like to invoke direct
+system calls of any kernel-level algorithms
+provided in the Crypto API Library.
+
+This program consists of two main (2) parts:
+	
+	sys_xcrypt.c 
+	
+	&
+	
+	xcipher.c
+
+The sys_xcrypt.c part consists of all the 
+kernel level Crypto API Library calls, while
+the xcipher.c part consists of all the 
+user level code that that allows the user to
+interact with the system calls.
+
+Essentially it currently operates using the
+system constant of PAGE_CACHE_SIZE to encrypt
+and/or decrypt chunks of data at a time. 
+The neat way that it saves kernel memory is 
+by using temporary scatterlist structures
+to encrypt and/or decrypt a buffer in-place.
+This allows any person running the program to
+save space on thier kernel (as opposed to 
+have two buffers).
+
+The key size of 16 bytes was selected based 
+on the main algorithm that this tool uses:
+
+	Advanced Encryption Standard (AES)
+
+using the method of 
+
+	Cipher-block chaining (CBC)
+
+(For more details, see References section)
+
+Since the program will access any given files
+data in chunks, there are occasions when the
+amount of data accessed is smaller than the
+PAGE_CACHE_SIZE.  In these cases, the XCrypt
+Cipher Tool will either do one of two things
+based on if the data being accessed needs to
+be encrypted or decrypted.
+
+Case 1: Data encryption -
+	The program will pad the endd of the
+	buffer with zeros.
+	
+Case 2: Data decryption -
+	The program will decrypt normally, 
+	however when the buffer is decrypted,
+	the program will then remove all of
+	the padded zeros from the plaintext
+	buffer automatically.
+
+========= Installation ========= 
+
+Installation is easy, first place 
+yourself inside the directory that both
+'sys_xcrypt.c' and 'xcipher.c'  are 
+located then run:
+
+	make
+	
+NOTE: If there is any issues running the
+program, run:
+
+	make clean
+
+then,
+
+	make
+	
+Lastly, run the module install script
+provided with:
+
+	./install_module.sh
+	
+Or, 
+if you perfer to add the module yourself:
+
+	insmod sys_xcrypt
+	
+========= Usage ========= 
+
+./xcipher [OPTIONS] [-p PASSWORD] <infile> <outfile>
+
+Options are as follows:
+   -p [PASS] :  Use [PASS] as password (skip prompt)
+   -d        :  Decrypt <infile> to <outfile>
+   -e        :  Encrypt <infile> to <outfile>
+   -h        :  Show help screen
+
+========= References ========= 
+
+DISCLAIMER:
+The following is a complete list of all resources
+and articles I have used during the course of
+my reasearch working on this tool, some
+resources and information that was found
+has influenced this tool's code, and some not.
+Also note that is may not be a complete list,
+as many referenced resources had seperate links
+that this program may or may not have been
+influenced by:
+
+http://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+http://en.wikipedia.org/wiki/Block_cipher_modes_of_operation#Cipher-block_chaining_.28CBC.29
+http://www.win.tue.nl/~aeb/linux/vfs/trail-2.html
+http://www.logix.cz/michal/devel/cryptodev/cryptoapi-demo.c.xp
+http://www.gnu.org/software/libc/manual/html_node/Error-Codes.html
+http://lxr.free-electrons.com/source/fs/open.c#L1003
+http://lxr.free-electrons.com/source/net/ceph/crypto.c?a=m68k#L90
+www.linuxjournal.com/article/1145?page=0,1
+http://www.linuxjournal.com/article/6930?page=0,0
+http://www.linuxjournal.com/article/1145?page=0,1
+http://stackoverflow.com/questions/1184274/how-to-read-write-files-within-a-linux-kernel-module
+http://stackoverflow.com/questions/6059528/want-an-example-for-using-aes-encryption-method-in-kernel-version-above-or-equal
+http://stackoverflow.com/questions/3869028/how-to-use-cryptoapi-in-the-linux-kernel-2-6
+http://lxr.fsl.cs.sunysb.edu/linux/source/include/linux/crypto.h#L1021
+http://thesweeheng.files.wordpress.com/2007/11/6451.pdf
+http://lxr.fsl.cs.sunysb.edu/linux/source/include/linux/crypto.h#L27
+http://lxr.fsl.cs.sunysb.edu/linux/source/drivers/usb/wusbcore/crypto.c#L323
+http://www.logix.cz/michal/devel/cryptodev/cryptoapi-demo.c.xp
+http://lxr.fsl.cs.sunysb.edu/linux/source/crypto/api.c#L393
+http://stackoverflow.com/questions/2680180/allocating-memory-for-a-char-pointer-that-is-part-of-a-struct
+http://lxr.free-electrons.com/source/fs/ecryptfs/crypto.c
+http://lxr.free-electrons.com/source/include/linux/crypto.h
+http://stackoverflow.com/questions/6059528/want-an-example-for-using-aes-encryption-method-in-kernel-version-above-or-equal  
+
+
+========= Changelog ========= 
+
+commit 18713b89ced3a68789097015cfcdc4c418657cc6
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 11:51:51 2012 -0500
+
+    Fixed all major bugs, version has become stable at this point and
+    contains all standard features.
+
+commit 9e50f8ae06d9c65b7c3b4712f3434013a2a60097
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 11:11:23 2012 -0500
+
+    More minor tweaks and bug fixing
+
+commit 0666b62247015d1c87d04da3ee49742abded8a92
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 10:41:01 2012 -0500
+
+    Fixed encrypt mostly. decrypt left
+
+commit 089c33a2724127595635f6381b2c635677ecbb93
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 10:27:46 2012 -0500
+
+    Polishing up the code for padding. Enc/Dec almost works fully.
+
+commit 74622889dd9a2005552c68ffd3fffd9280e90248
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 09:11:30 2012 -0500
+
+    Trimmed out a bunch of junk. Still fixing enc/dec
+
+commit 3f8ecc467d67fb56eb08c04598f3dbe18f3d2d1e
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 07:05:39 2012 -0500
+
+    Fixed some errors, now stuck in loop somewhere within encryption and decryption.
+
+commit 9440d65ffe98a9fcf40028e09357ec1bca0d731e
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 06:41:48 2012 -0500
+
+    Fixed more problems in encryption and decryption.  Still have a few more to go.
+
+commit 7d9c3d88c27a47ff51bce4f3439d4c1457fcc762
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 02:25:10 2012 -0500
+
+    Still debugging encryption and decryption.
+
+commit 57a0e663cbd731f2deee8864e71a8334cb4c9d84
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Mon Dec 10 00:55:07 2012 -0500
+
+    Added encryption and decryption.  In process of debugging.
+
+commit ea7ea2febb78e216bee518e271cc8585dca09197
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 21:54:00 2012 -0500
+
+    Fixed infinite loop. File I/O complete. Only need encryption and decryption.
+
+commit ecbb2f82c69fee698cf1bfd86b99071084eeeb21
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 21:19:11 2012 -0500
+
+    More file I/O testing
+
+commit 6dc7e9674591c591a5ded372352c687f84d55eaf
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 20:23:38 2012 -0500
+
+    Added basic file I/O. Scaleing it up for larger files now.
+
+commit 897be0d059fce4776eb572eb3563f88f9b403439
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 20:08:38 2012 -0500
+
+    Testing I/O and more debugging
+
+commit a815816004c9db02934f879934433af54d5b8a41
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 19:39:53 2012 -0500
+
+    Added a lot of I/O, still debugging.
+
+commit 88a1bf5751ae353f9ba3c7e3790177f04dff34f5
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 17:30:06 2012 -0500
+
+    Working on kernel I/O some more.
+
+commit 4c6e4d2f1fd2dca18493122dacd4d0f566f20d7f
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 13:57:35 2012 -0500
+
+    Fixed bug
+
+commit c565208e0ae465291da56eac183c6ada007cbd57
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 13:20:13 2012 -0500
+
+    Debugging kernel i/o
+
+commit 9d439e9be2245426eba232ce1973534285903027
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sun Dec 9 05:08:45 2012 -0500
+
+    Fixed errors in both levels
+
+commit 2a95b183595d4a55b588bb3d24519adce7f0c562
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sat Dec 8 18:17:06 2012 -0500
+
+    Finished debugging main memory leaks
+
+commit ca0b4edeabb323aadd08f710162a79557d7ac69a
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sat Dec 8 04:19:23 2012 -0500
+
+    Debugging parts of memory leaks
+
+commit 3dd21230d49482fe4887a255de156984c3d9550b
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sat Dec 8 03:06:39 2012 -0500
+
+    Fixing up I/O
+
+commit 4abb26a817ba1bb3c871c257f702c9523163f971
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Thu Dec 6 01:42:13 2012 -0500
+
+    Merged headers, starting to debug file IO on kernel level
+
+commit a06c739c8c5939f786b5ac1de647de6c0599c9a0
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Wed Dec 5 15:40:50 2012 -0500
+
+    Finished user-side code
+
+commit 28f463590ecd2f132620efac706fa2282ce320d1
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Tue Dec 4 01:03:30 2012 -0500
+
+    Added cleanup to userspace
+
+commit 36569a8b1c5a6989a13d2fcff2c23e12aa50e967
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sat Dec 1 23:22:02 2012 -0500
+
+    Finished user-side error checking, now setting up the system call loops.
+
+commit 936b42f7ce36190e1248a48c576f2a109db8eef6
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Sat Dec 1 00:22:23 2012 -0500
+
+    Added some basic command line interpretations.
+
+commit 3f5e712c2cf9e8c2c930e6534e9bd8d42853d04f
+Author: root <root@vl121.cs.stonybrook.edu>
+Date:   Wed Nov 28 22:17:13 2012 -0500
+
+    Initial commit with some basic methods added
