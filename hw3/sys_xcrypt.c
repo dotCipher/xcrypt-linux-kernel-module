@@ -123,34 +123,38 @@ int sg_len){
 	return i;
 }
 
-static crypto_blkcipher *xcrypt_alloc_tfm(){
+static struct crypto_blkcipher *xcrypt_alloc_tfm(void){
 	return crypto_alloc_blkcipher("cbc(aes)", 0, CRYPTO_ALG_ASYNC);
 }
 
 int xcrypt_cipher(void *key, int keylen, char *to_buffer, 
 char *from_buffer, int buffer_len, int enc_flag){
+	// Declare all needed variables
 	struct scatterlist *src;
 	struct scatterlist *dst;
 	struct crypto_blkcipher *tfm = xcrypt_alloc_tfm();
-	//char *new_key;
-	//unsigned char tmp_src, tmp_dst;
+	char *new_key;
 	int ret, i;
 	void *iv;
 	int ivsize;
 	// change this to add ivs
 	struct blkcipher_desc desc = {
-		.tfm = tfm, .info = 0, .flags = CRYPTO_TFM_REQ_MAY_SLEEP };
+		.tfm = tfm, .flags = CRYPTO_TFM_REQ_MAY_SLEEP };
 	ret = 1; i = 0;
 	
 	if(IS_ERR(tfm)){
 		ret = PTR_ERR(tfm);
 		printk(KERN_CRIT "Cant load transform\n");
+		crypto_free_blkcipher(tfm);
 		return ret;
 	}
 	printk(KERN_CRIT "Setting crypto cipher key\n");
 	
-	// Pad key with nulls
-	new_key = kmalloc(16, GFP_KERNEL);
+	// Force pad key with nulls
+	if(!(new_key = kmalloc(16, GFP_KERNEL))){
+		crypto_free_blkcipher(tfm);
+		return -ENOMEM;
+	}
 	if(keylen < 16){
 			new_key = key;
 		for(i = keylen; i < 16; i++){
@@ -179,12 +183,22 @@ char *from_buffer, int buffer_len, int enc_flag){
 	printk(KERN_CRIT "Setting iv.\n");
 	iv = crypto_blkcipher_crt(tfm)->iv;
 	ivsize = crypto_blkcipher_ivsize(tfm);
+	printk(KERN_CRIT "ivsize = %d\n", ivsize);
+	
+	// Alloc mem for iv
+	if(!(iv = kmalloc(ivsize, GFP_KERNEL))){
+		crypto_free_blkcipher(tfm);
+		return -ENOMEM;
+	}
+	
 	memcpy(iv, (u8 *)"x8QR55HKpW52464q", ivsize);
+	printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
+
 	//printk(KERN_CRIT "tfm->crt_flags = %d\n", tfm->crt_flags);
 	
 	if(enc_flag == 1){
 		printk(KERN_CRIT "Encrypting in xcrypt_cipher()\n");
-		ret = crypto_blkcipher_encrypt(&desc, dst, src, buffer_length);
+		ret = crypto_blkcipher_encrypt(&desc, dst, src, buffer_len);
 		/*
 		for(i = 0; i < buffer_len; i++){
 			tmp_src = from_buffer[i];
@@ -197,7 +211,7 @@ char *from_buffer, int buffer_len, int enc_flag){
 		*/
 	} else {
 		printk(KERN_CRIT "Decrypting in xcrypt_cipher()\n");
-		ret = crypto_blkcipher_decrypt(&desc, dst, src, buffer_length);
+		ret = crypto_blkcipher_decrypt(&desc, dst, src, buffer_len);
 		/*
 		for(i = 0; i < buffer_len; i++){
 			tmp_src = from_buffer[i];
@@ -207,13 +221,15 @@ char *from_buffer, int buffer_len, int enc_flag){
 		*/
 	}
 	
-	ret = crypto_free_blkcipher(tfm);
+	crypto_free_blkcipher(tfm);
 	
 	if(ret < 0){
 		printk(KERN_CRIT "Encryption failed\n");
+		kfree(new_key);
 		return ret;
 	}
 	printk(KERN_CRIT "Returning from xcrypt_cipher()\n");
+	kfree(new_key);
 	return 0;
 }
 
