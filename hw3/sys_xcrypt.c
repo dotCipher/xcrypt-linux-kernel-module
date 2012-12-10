@@ -75,7 +75,7 @@ int kfile_sync(struct file* file){
 
 int is_same_kfile(struct file* file1, struct file* file2){
 	if(file1->f_dentry->d_inode->i_ino == file2->f_dentry->d_inode->i_ino 
-	|| file1->f_dentry->d_sb == file2->f_dentry->d_sb){
+	&& file1->f_dentry->d_sb == file2->f_dentry->d_sb){
 		return 1;
 	} else {
 		return 0;
@@ -189,7 +189,8 @@ asmlinkage int sys_xcrypt(void *args){
 		kfree(k_infile); kfree(k_outfile);
 		kfree(buffer);
 		// Close and unlink
-		kfile_close(infile); kfile_unlink(infile);
+		kfile_close(infile); 
+		//kfile_unlink(infile);
 		printk(KERN_CRIT "Error opening outfile.\n");
 		return -EINVAL;
 	}
@@ -203,24 +204,26 @@ asmlinkage int sys_xcrypt(void *args){
 		kfree(k_infile); kfree(k_outfile);
 		kfree(buffer); 
 		// Close and unlink
-		kfile_close(infile); kfile_unlink(infile);
-		kfile_close(outfile); kfile_unlink(outfile);
+		kfile_close(infile);// kfile_unlink(infile);
+		kfile_close(outfile); //kfile_unlink(outfile);
+		printk(KERN_CRIT "Infile and outfile are the same\n");
 		return -EINVAL;
 	} else {
 		// Not the same file, re open outfile 
-		kfile_close(outfile); kfile_unlink(outfile);
+		kfile_close(outfile); //kfile_unlink(outfile);
 		if((outfile = kfile_open(k_outfile,
 		O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR)) == NULL){
 			kfree(k_args); kfree(k_keybuf);
 			kfree(k_infile); kfree(k_outfile);
 			kfree(buffer);
 			// Close and unlink
-			kfile_close(infile); kfile_unlink(infile);
+			kfile_close(infile); //kfile_unlink(infile);
+			printk(KERN_CRIT "Error re-opening outfile\n");
 			return -EINVAL;	
 		}
 	}
 
-	
+	printk(KERN_CRIT "--- Entering Main I/O Loop ---\n");
 	/* --- Main I/O loop --- */
 	bytes_read = -1;
 	while(bytes_read != 0){
@@ -231,8 +234,8 @@ asmlinkage int sys_xcrypt(void *args){
 			kfree(k_infile); kfree(k_outfile);
 			kfree(buffer);
 			// Close and Unlink file
-			kfile_close(infile); kfile_unlink(infile);
-			kfile_close(outfile); kfile_unlink(outfile);
+			kfile_close(infile); //kfile_unlink(infile);
+			kfile_close(outfile); //kfile_unlink(outfile);
 			return -EINVAL;
 		} else if(bytes_read > 0){
 			// Was read even with page_size?
@@ -258,8 +261,8 @@ asmlinkage int sys_xcrypt(void *args){
 					kfree(k_infile); kfree(k_outfile);
 					kfree(buffer);
 					// Close and Unlink file
-					kfile_close(infile); kfile_unlink(infile);
-					kfile_close(outfile); kfile_unlink(outfile);
+					kfile_close(infile); //kfile_unlink(infile);
+					kfile_close(outfile); //kfile_unlink(outfile);
 					return -EINVAL;
 				}
 			 } else if(bytes_read < page_size){
@@ -284,8 +287,8 @@ asmlinkage int sys_xcrypt(void *args){
 					kfree(k_infile); kfree(k_outfile);
 					kfree(buffer);
 					// Close and Unlink files
-					kfile_close(infile); kfile_unlink(infile);
-					kfile_close(outfile); kfile_unlink(outfile);
+					kfile_close(infile); //kfile_unlink(infile);
+					kfile_close(outfile); //kfile_unlink(outfile);
 					return -EINVAL;
 			 	}
 			 }
@@ -295,8 +298,8 @@ asmlinkage int sys_xcrypt(void *args){
 	}
 	
 	// Close and Unlink files
-	kfile_close(infile); kfile_unlink(infile);
-	kfile_close(outfile); kfile_unlink(outfile);
+	kfile_close(infile); //kfile_unlink(infile);
+	kfile_close(outfile); //kfile_unlink(outfile);
 	// Free everything
 	kfree(k_args); kfree(k_keybuf);
 	kfree(k_infile); kfree(k_outfile);
