@@ -190,7 +190,7 @@ char *from_buffer, size_t from_len, short pgflag){
 	if(pgflag != 1){
 		zero_pad = (0x10 - (from_len & 0x0f));
 		memset(pad, zero_pad, zero_pad);
-		*to_len = from_len - zero_pad;
+		// *to_len = from_len - zero_pad;
 	} else {
 		zero_pad = 0;
 	}               	
@@ -214,7 +214,12 @@ char *from_buffer, size_t from_len, short pgflag){
 	//printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
 	
 	printk(KERN_CRIT "Decrypting in xcrypt_cipher()\n");
-	ret = crypto_blkcipher_decrypt(&desc, dst, src, from_len + zero_pad);
+	printk(KERN_CRIT "from_len = %d\n", from_len);
+	if(pgflag != 1){
+		ret = crypto_blkcipher_decrypt(&desc, dst, src, *to_len);
+	} else {
+		ret = crypto_blkcipher_decrypt(&desc, dst, src, from_len);
+	}
 	crypto_free_blkcipher(tfm);
 	
 	if(ret < 0){
@@ -229,6 +234,7 @@ char *from_buffer, size_t from_len, short pgflag){
 		} else {
 			last_byte = pad[from_len - *to_len - 1];
 		}
+		printk(KERN_CRIT "--- last_byte = %d\n", last_byte);
 		if(last_byte <= 16 && from_len >= last_byte){
 			*to_len = from_len - last_byte;
 		} else {
@@ -530,7 +536,7 @@ asmlinkage int sys_xcrypt(void *args){
 						return -EINVAL;						
 					} else {
 						// Reset values
-						src_len = 0;
+						bytes_read = 0; src_len = 0;
 					}
 				}
 			 	
