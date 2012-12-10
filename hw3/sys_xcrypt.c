@@ -118,7 +118,7 @@ char *from_buffer, size_t from_len, short pgflag){
 		crypto_free_blkcipher(tfm);
 		return ret;
 	}
-	printk(KERN_CRIT "Setting crypto cipher key\n");
+	//printk(KERN_CRIT "Setting crypto cipher key\n");
 	
 	// Force padding if above page size
 	if(pgflag != 1){
@@ -129,7 +129,7 @@ char *from_buffer, size_t from_len, short pgflag){
 		zero_pad = 0;
 	}
 	
-	printk(KERN_CRIT "key = %s\n", key);
+	//printk(KERN_CRIT "key = %s\n", key);
 	crypto_blkcipher_setkey((void *)tfm, key, keylen);
 
 	sg_init_table(src, 2);
@@ -141,14 +141,14 @@ char *from_buffer, size_t from_len, short pgflag){
 	sg_set_buf(&dst[0], to_buffer, *to_len);
 	
 	// Set Initialization Vector
-	printk(KERN_CRIT "Setting iv.\n");
+	//printk(KERN_CRIT "Setting iv.\n");
 	iv = crypto_blkcipher_crt(tfm)->iv;
 	ivsize = crypto_blkcipher_ivsize(tfm);
-	printk(KERN_CRIT "ivsize = %d\n", ivsize);
+	//printk(KERN_CRIT "ivsize = %d\n", ivsize);
 	
 	// TODO: Change this to allow new ivs
 	memcpy(iv, iv_str, ivsize);
-	printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
+	//printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
 
 	printk(KERN_CRIT "Encrypting in xcrypt_cipher()\n");
 	ret = crypto_blkcipher_encrypt(&desc, dst, src, from_len + zero_pad);
@@ -165,7 +165,7 @@ char *from_buffer, size_t from_len, short pgflag){
 
 int xdecrypt_buffer(void *key, int keylen, 
 char *to_buffer, size_t *to_len,
-char *from_buffer, size_t from_len){
+char *from_buffer, size_t from_len, short pgflag){
 	// Declare all needed variables
 	struct scatterlist src[1];
 	struct scatterlist dst[2];
@@ -173,7 +173,7 @@ char *from_buffer, size_t from_len){
 	int ret, i, last_byte;
 	void *iv;
 	int ivsize;
-	//size_t zero_pad = (0x10 - (from_len & 0x0f));
+	size_t zero_pad;
 	char pad[16];
 	struct blkcipher_desc desc = { .tfm = tfm };
 	ret = 1; i = 0; last_byte = 0;
@@ -184,31 +184,37 @@ char *from_buffer, size_t from_len){
 		crypto_free_blkcipher(tfm);
 		return ret;
 	}
-	printk(KERN_CRIT "Setting crypto cipher key\n");
+	//printk(KERN_CRIT "Setting crypto cipher key\n");
 	
 	// Set padding
-	//memset(pad, zero_pad, zero_pad);
-	// *to_len = from_len - zero_pad;
-                    	
+	if(pgflag != 1){
+		zero_pad = (0x10 - (from_len & 0x0f));
+		memset(pad, zero_pad, zero_pad);
+		*to_len = from_len - zero_pad;
+	} else {
+		zero_pad = 0;
+	}               	
 	crypto_blkcipher_setkey((void *)tfm, key, keylen);
 	sg_init_table(src, 1);
 	sg_set_buf(&src[0], from_buffer, from_len);
 	sg_init_table(dst, 2);
 	sg_set_buf(&dst[0], to_buffer, *to_len);
-	sg_set_buf(&dst[1], pad, sizeof(pad));
+	if(pgflag != 1){
+		sg_set_buf(&dst[1], pad, sizeof(pad));
+	}
 	
 	// Set ivs
-	printk(KERN_CRIT "Setting iv.\n");
+	//printk(KERN_CRIT "Setting iv.\n");
 	iv = crypto_blkcipher_crt(tfm)->iv;
 	ivsize = crypto_blkcipher_ivsize(tfm);
-	printk(KERN_CRIT "ivsize = %d\n", ivsize);
+	//printk(KERN_CRIT "ivsize = %d\n", ivsize);
 	
 	// TODO: Change to allow new ivs
 	memcpy(iv, iv_str, ivsize);
-	printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
+	//printk(KERN_CRIT "iv = %s\n", (unsigned char *)iv);
 	
 	printk(KERN_CRIT "Decrypting in xcrypt_cipher()\n");
-	ret = crypto_blkcipher_decrypt(&desc, dst, src, from_len);
+	ret = crypto_blkcipher_decrypt(&desc, dst, src, from_len + zero_pad);
 	crypto_free_blkcipher(tfm);
 	
 	if(ret < 0){
@@ -217,18 +223,20 @@ char *from_buffer, size_t from_len){
 	}
 	
 	// Remove excess padding
-	if(from_len <= *to_len){
-		last_byte = ((char *)to_buffer)[from_len - 1];
-	} else {
-		last_byte = pad[from_len - *to_len - 1];
-	}
-	if(last_byte <= 16 && from_len >= last_byte){
-		*to_len = from_len - last_byte;
-	} else {
-		ret = 1;
-		printk(KERN_CRIT "Encountered bad padding on %d on src_len %d\n",
-		last_byte, (int)from_len);
-		return ret;
+	if(pgflag != 1){
+		if(from_len <= *to_len){
+			last_byte = ((char *)to_buffer)[from_len - 1];
+		} else {
+			last_byte = pad[from_len - *to_len - 1];
+		}
+		if(last_byte <= 16 && from_len >= last_byte){
+			*to_len = from_len - last_byte;
+		} else {
+			ret = 1;
+			printk(KERN_CRIT "Encountered bad padding on %d on src_len %d\n",
+			last_byte, (int)from_len);
+			return ret;
+		}
 	}
 	
 	printk(KERN_CRIT "Returning from xcrypt_cipher()\n");
@@ -437,7 +445,7 @@ asmlinkage int sys_xcrypt(void *args){
 					src_len = bytes_read;
 					i = 0;
 					i = xdecrypt_buffer(k_keybuf, k_keylen, 
-						buffer, dst_len, buffer, src_len);
+						buffer, dst_len, buffer, src_len, 1);
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
@@ -508,7 +516,7 @@ asmlinkage int sys_xcrypt(void *args){
 					src_len = bytes_read;
 					i = 0;
 					i = xdecrypt_buffer(k_keybuf, k_keylen, 
-						buffer, dst_len, buffer, src_len);
+						buffer, dst_len, buffer, src_len, 0);
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
