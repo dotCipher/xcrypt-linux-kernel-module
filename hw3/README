@@ -1,1 +1,7 @@
-XXX: fill in
+README: Is named README (case sensitive). 
+Describe all design decisions. 
+How do you select the key size? 
+How do you handle files that are not a multiple 
+of the cipher block encoding size?
+What do you store in the preamble?
+
