@@ -85,41 +85,39 @@ int is_same_kfile(struct file* file1, struct file* file2){
 	}
 }
 
-struct crypto_blkcipher *alloc_xcipher(void){
-	return crypto_alloc_blkcipher("cbc(aes)", 0, CRYPTO_ALG_ASYNC);
-}
-
-int xcrypt_cipher(char *key, int keylen, char *to_buffer, 
+int xcrypt_cipher(void *key, int keylen, char *to_buffer, 
 char *from_buffer, int buffer_len, int enc_flag){
-	char *algo = "cbc(aes)";
-	struct crypto_blockcipher *tfm = alloc_xcipher();
-	struct blkcipher_desc desc = { .tfm = tfm };
+	struct scatterlist src, dst;
+	struct crypto_cipher *tfm;
 	int ret;
 	void *iv;
 	
 	ret = 1;
 	
+	tfm = crypto_alloc_cipher("aes", 0, CRYPTO_ALG_ASYNC);	
 	if(IS_ERR(tfm)){
-		return PTR_ERR(tfm);
+		ret = PTR_ERR(tfm);
+		printk(KERN_CRIT "Cant load transform\n");
+		return ret;
 	}
-	ret = crypto_cipher_setkey((void *)tfm, key, keylen);
-	if(ret){
+	printk(KERN_CRIT "Setting crypto cipher key\n");
+	ret = crypto_cipher_setkey(tfm, key, 16);
+	if(ret < 0){
 		printk(KERN_CRIT "setkey() failed\n");
 		crypto_free_tfm(tfm);
 		return ret;
 	}
 	
 	printk(KERN_CRIT "Setting iv.\n");
-	iv = crypto_blkcipher_crt(tfm)->iv;
 	memset(iv, 0, PASS_MAX);
 	
 	if(enc_flag){
 		printk(KERN_CRIT "Encrypting in xcrypt_cipher()\n");
-		ret = crypto_blkcipher_encrypt(&desc, 
+		ret = crypto_blkcipher_encrypt(tfm, 
 		to_buffer, from_buffer, buffer_len);
 	} else {
 		printk(KERN_CRIT "Decrypting in xcrypt_cipher()\n");
-		ret = crypto_blkcipher_decrypt(&desc,
+		ret = crypto_blkcipher_decrypt(tfm,
 		to_buffer, from_buffer, buffer_len);
 	}
 	
