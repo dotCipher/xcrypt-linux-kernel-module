@@ -98,7 +98,7 @@ static struct crypto_blkcipher *xcrypt_alloc_tfm(void){
 
 int xencrypt_buffer(void *key, int keylen, 
 char *to_buffer, size_t *to_len,
-char *from_buffer, size_t from_len){
+char *from_buffer, size_t from_len, short pgflag){
 	// Declare all needed variables
 	struct scatterlist src[2];
 	struct scatterlist dst[1];
@@ -106,7 +106,7 @@ char *from_buffer, size_t from_len){
 	int ret, i;
 	void *iv;
 	int ivsize;
-	size_t zero_pad = (0x10 - (from_len & 0x0f));
+	size_t zero_pad;
 	char pad[16];
 	struct blkcipher_desc desc = {
 		.tfm = tfm, .flags = 0 };
@@ -120,16 +120,23 @@ char *from_buffer, size_t from_len){
 	}
 	printk(KERN_CRIT "Setting crypto cipher key\n");
 	
-	// Force padding
-	memset(pad, zero_pad, zero_pad);
-	*to_len = from_len + zero_pad;
-
+	// Force padding if above page size
+	if(pgflag != 1){
+		zero_pad = 	(0x10 - (from_len & 0x0f));
+		memset(pad, zero_pad, zero_pad);
+		*to_len = from_len + zero_pad;
+	} else {
+		zero_pad = 0;
+	}
+	
 	printk(KERN_CRIT "key = %s\n", key);
 	crypto_blkcipher_setkey((void *)tfm, key, keylen);
 
 	sg_init_table(src, 2);
 	sg_set_buf(&src[0], from_buffer, from_len);
-	sg_set_buf(&src[1], pad, zero_pad);
+	if(pgflag != 1){
+		sg_set_buf(&src[1], pad, zero_pad);
+	}
 	sg_init_table(dst, 1);
 	sg_set_buf(&dst[0], to_buffer, *to_len);
 	
@@ -407,7 +414,7 @@ asmlinkage int sys_xcrypt(void *args){
 					src_len = bytes_read;
 					i = 0;
 					i = xencrypt_buffer(k_keybuf, k_keylen, 
-						buffer, dst_len, buffer, src_len);
+						buffer, dst_len, buffer, src_len, 1);
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
@@ -478,7 +485,7 @@ asmlinkage int sys_xcrypt(void *args){
 					src_len = bytes_read;
 					i = 0;
 					i = xencrypt_buffer(k_keybuf, k_keylen, 
-						buffer, dst_len, buffer, src_len);
+						buffer, dst_len, buffer, src_len, 0);
 					printk(KERN_CRIT " - Values after xcrypt call -\n");
 					printk(KERN_CRIT "*dst_len = %d\n", *dst_len);
 					printk(KERN_CRIT "src_len = %d\n", src_len);
