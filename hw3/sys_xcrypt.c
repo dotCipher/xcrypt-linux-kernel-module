@@ -97,6 +97,7 @@ asmlinkage int sys_xcrypt(void *args){
 	struct file *infile;
 	struct file *outfile;
 	long long bytes_read, bytes_write;
+	int offset_total;
 	int params_len = sizeof(struct xcrypt_params);
 	page_size = 4096;
 	printk(KERN_CRIT "--- Entering kerning module sys_xcrypt ---\n");
@@ -224,14 +225,15 @@ asmlinkage int sys_xcrypt(void *args){
 	}
 
 	printk(KERN_CRIT "--- Entering Main I/O Loop ---\n");
-	// simple read and write
+	// DEBUGGING simple read and write
+	/*
 	bytes_read = 0;
 	bytes_write = 0;
 	printk(KERN_CRIT "bytes_read before call: %d\n", bytes_read);
 	bytes_read = kfile_read(infile, bytes_read, buffer, page_size);
 	printk(KERN_CRIT "bytes_read after call: %d\n", bytes_read);
 	printk(KERN_CRIT "bytes_write before call: %d\n", bytes_write);
-	bytes_write = kfile_write(outfile,  bytes_write, buffer, page_size);
+	bytes_write = kfile_write(outfile,  bytes_write, buffer, bytes_read);
 	printk(KERN_CRIT "bytes_write after call: %d\n", bytes_write);
 			kfree(k_args); kfree(k_keybuf);
 			kfree(k_infile); kfree(k_outfile);
@@ -240,13 +242,18 @@ asmlinkage int sys_xcrypt(void *args){
 			kfile_close(infile); //kfile_unlink(infile);
 			kfile_close(outfile); //kfile_unlink(outfile);
 	return 0;
-
+	*/
+	
 	/* --- Main I/O loop --- */
 	bytes_read = -1;
+	bytes_write = 0;
+	offset_total = 0;
 	while(bytes_read != 0){
 		bytes_read = 0;
-		bytes_read = kfile_read(infile, bytes_read, buffer, page_size);
-		if(bytes_read == -1){
+		bytes_read = kfile_read(infile, offset_total, buffer, page_size);
+		printk(KERN_CRIT "bytes_read: %d\n", bytes_read);
+		printk(KERN_CRIT "offset_total after read:: %d\n", offset_total);
+		if(bytes_read < 0){
 			// Partial read encountered
 			kfree(k_args); kfree(k_keybuf);
 			kfree(k_infile); kfree(k_outfile);
@@ -270,8 +277,11 @@ asmlinkage int sys_xcrypt(void *args){
 				//Test file I/O
 								
 				// Write buffer
-				bytes_write = kfile_write(outfile, bytes_read, 
+				printk(KERN_CRIT "bytes_write before: %d\n", bytes_write);
+				bytes_write = kfile_write(outfile, offset_total, 
 				buffer, page_size);
+				printk(KERN_CRIT "bytes_write after: %d\n", bytes_write);
+				offset_total += bytes_write;
 				
 				if(bytes_write == -1){
 					// Partial write encountered?
@@ -296,8 +306,11 @@ asmlinkage int sys_xcrypt(void *args){
 			 	// Test file I/O
 			 	
 			 	// Write buffer
-			 	bytes_write = kfile_write(outfile, bytes_read, 
+				printk(KERN_CRIT "bytes_write before: %d\n", bytes_write);
+			 	bytes_write = kfile_write(outfile, offset_total, 
 			 	buffer, bytes_read);
+				printk(KERN_CRIT "bytes_write after: %d\n", bytes_write);
+			 	offset_total += bytes_write;
 			 	
 			 	if(bytes_write == -1){
 			 		// Partial write encountered?
@@ -310,7 +323,7 @@ asmlinkage int sys_xcrypt(void *args){
 					return -EINVAL;
 			 	}
 			 }
-			 // Clear buffers
+			 // Clear buffer
 			 memset(buffer, 0, page_size);
 		} // else bytes_read == 0, terminate while
 	}
