@@ -36,8 +36,8 @@ void kfile_close(struct file* file){
 
 int kfile_unlink(struct file* file){
 	int ret;
-	ret = vfs_unlink();
-	
+	ret = vfs_unlink(file->f_dentry->d_inode, file->f_dentry);
+	return ret;
 }
 
 int kfile_read(struct file* file, unsigned long long offset, unsigned char* 
@@ -73,6 +73,15 @@ int kfile_sync(struct file* file){
 	return 0;
 }
 
+int is_same_kfile(struct file* file1, struct file* file2){
+	if(file1->f_dentry->d_inode->i_ino == file2->f_dentry->d_inode->i_ino 
+	|| file1->f_dentry->d_sb == file2->f_dentry->d_sb){
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
 asmlinkage extern long (*sysptr)(void *arg);
 
 asmlinkage int sys_xcrypt(void *args){
@@ -83,8 +92,8 @@ asmlinkage int sys_xcrypt(void *args){
 	char *k_keybuf;
 	int k_keylen;
 	unsigned char k_flags;
-	long page_size;
-	char *buffer;
+	int page_size;
+	unsigned char *buffer;
 	struct file *infile;
 	struct file *outfile;
 	long long bytes_read, bytes_write;
@@ -116,18 +125,17 @@ asmlinkage int sys_xcrypt(void *args){
 	k_keylen = (((struct xcrypt_params *)k_args)->keylen);
 	
 	// Keybuf
-	if(!(k_keybuf = kmalloc(((struct xcrypt_params *)k_args)->keylen, 
-	GFP_KERNEL))){
+	if(!(k_keybuf = kmalloc(k_keylen, GFP_KERNEL))){
 		kfree(k_args);
 		return -ENOMEM;
 	}
 	if(!access_ok(VERIFY_READ, ((struct xcrypt_params *)k_args)->keybuf,
-	((struct xcrypt_params *)k_args)->keylen)){
+	k_keylen)){
 		kfree(k_args); kfree(k_keybuf);
 		return -EFAULT;
 	}
 	if(copy_from_user(k_keybuf, ((struct xcrypt_params *)k_args)->keybuf,
-	((struct xcrypt_params *)k_args)->keylen)){
+	k_keylen)){
 		kfree(k_args); kfree(k_keybuf);
 		return -EINVAL;
 	}
@@ -152,23 +160,66 @@ asmlinkage int sys_xcrypt(void *args){
 	printk(KERN_CRIT "k_keylen = %d\n", k_keylen);
 	printk(KERN_CRIT "k_flags = %d\n", k_flags);
 	
-	// Error check both the infile and outfile
-	
 	// Clear buffer
-	if(!(buffer = kmalloc(page_size, GFP_KERNEL))){
+	if(!(buffer = (unsigned char *)kmalloc(page_size, GFP_KERNEL))){
 		kfree(k_args); kfree(k_keybuf);
 		kfree(k_infile); kfree(k_outfile);
+		printk(KERN_CRIT "Error kmallocing to_buffer\n");
 		return -ENOMEM;
-	}	
-
+	}
 	memset(buffer, 0, page_size);
-		
+	
+	// Errror check both files
+	printk(KERN_CRIT "Opening files...\n");
+	
 	// Open the infile 
-	if((infile = kfile_open(k_infile, O_RDONLY, S_IRUSR)) == NULL){
+	if((infile = kfile_open(k_infile, 
+	O_RDONLY, S_IRUSR)) == NULL){
 		kfree(k_args); kfree(k_keybuf);
 		kfree(k_infile); kfree(k_outfile);
+		kfree(buffer);
+		printk(KERN_CRIT "Error opening infile.\n");
 		return -EINVAL;
 	}
+	
+	// Open the outfile
+	if((outfile = kfile_open(k_outfile, 
+	O_RDONLY | O_CREAT, S_IRUSR)) == NULL){		
+		kfree(k_args); kfree(k_keybuf);
+		kfree(k_infile); kfree(k_outfile);
+		kfree(buffer);
+		// Close and unlink
+		kfile_close(infile); kfile_unlink(infile);
+		printk(KERN_CRIT "Error opening outfile.\n");
+		return -EINVAL;
+	}
+	
+	// Compare same file or links 
+	//  (dentry->d_inode check and dentry->d_sb check)
+	
+	//  dentry->d_inode->i_size for removing pratial outfiles
+	if(is_same_kfile(infile, outfile)){
+		kfree(k_args); kfree(k_keybuf);
+		kfree(k_infile); kfree(k_outfile);
+		kfree(buffer); 
+		// Close and unlink
+		kfile_close(infile); kfile_unlink(infile);
+		kfile_close(outfile); kfile_unlink(outfile);
+		return -EINVAL;
+	} else {
+		// Not the same file, re open outfile 
+		kfile_close(outfile); kfile_unlink(outfile);
+		if((outfile = kfile_open(k_outfile,
+		O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR)) == NULL){
+			kfree(k_args); kfree(k_keybuf);
+			kfree(k_infile); kfree(k_outfile);
+			kfree(buffer);
+			// Close and unlink
+			kfile_close(infile); kfile_unlink(infile);
+			return -EINVAL;	
+		}
+	}
+
 	
 	/* --- Main I/O loop --- */
 	bytes_read = -1;
@@ -178,15 +229,25 @@ asmlinkage int sys_xcrypt(void *args){
 			// Partial read encountered
 			kfree(k_args); kfree(k_keybuf);
 			kfree(k_infile); kfree(k_outfile);
-			// Close file
-			kfile_close(infile);
+			kfree(buffer);
+			// Close and Unlink file
+			kfile_close(infile); kfile_unlink(infile);
+			kfile_close(outfile); kfile_unlink(outfile);
 			return -EINVAL;
 		} else if(bytes_read > 0){
 			// Was read even with page_size?
 			if(bytes_read == page_size){
 				// page_size has been read
-				// Encrypt/Decrypt buffer
-				
+				// Is the LSB set to 1?
+				if(k_flags & (1 << 8)){
+					// Encrypt buffer
+					
+				} else {
+					// Decrypt buffer
+					
+				}
+				//Test file I/O
+								
 				// Write buffer
 				bytes_write = kfile_write(outfile, bytes_read, 
 				buffer, page_size);
@@ -195,13 +256,23 @@ asmlinkage int sys_xcrypt(void *args){
 					// Partial write encountered?
 					kfree(k_args); kfree(k_keybuf);
 					kfree(k_infile); kfree(k_outfile);
-					// Close file
-					kfile_close(infile);
+					kfree(buffer);
+					// Close and Unlink file
+					kfile_close(infile); kfile_unlink(infile);
+					kfile_close(outfile); kfile_unlink(outfile);
 					return -EINVAL;
 				}
 			 } else if(bytes_read < page_size){
 			 	// bytes_read has been read
-			 	// Encrypt/Decrypt buffer
+			 	// Is the LSB set to 1?
+			 	if(k_flags & (1 << 8)){
+			 		// Encrypt buffer
+			 		
+			 	} else {
+			 		// Decrypt buffer
+			 		
+			 	}
+			 	// Test file I/O
 			 	
 			 	// Write buffer
 			 	bytes_write = kfile_write(outfile, bytes_read, 
@@ -211,20 +282,25 @@ asmlinkage int sys_xcrypt(void *args){
 			 		// Partial write encountered?
 					kfree(k_args); kfree(k_keybuf);
 					kfree(k_infile); kfree(k_outfile);
-					// Close file
-					kfile_close(infile);
+					kfree(buffer);
+					// Close and Unlink files
+					kfile_close(infile); kfile_unlink(infile);
+					kfile_close(outfile); kfile_unlink(outfile);
 					return -EINVAL;
 			 	}
 			 }
 			 // Clear buffers
-			 memset(to_buffer, 0, page_size);
-			 memset(from_buffer, 0, page_size);
+			 memset(buffer, 0, page_size);
 		} // else bytes_read == 0, terminate while
 	}
 	
-	
+	// Close and Unlink files
+	kfile_close(infile); kfile_unlink(infile);
+	kfile_close(outfile); kfile_unlink(outfile);
+	// Free everything
 	kfree(k_args); kfree(k_keybuf);
 	kfree(k_infile); kfree(k_outfile);
+	kfree(buffer);
 	return 0;
 }
 
