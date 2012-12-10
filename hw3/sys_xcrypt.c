@@ -226,9 +226,13 @@ asmlinkage int sys_xcrypt(void *args){
 	printk(KERN_CRIT "--- Entering Main I/O Loop ---\n");
 	// simple read and write
 	bytes_read = 0;
+	bytes_write = 0;
+	printk(KERN_CRIT "bytes_read before call: %d\n", bytes_read);
 	bytes_read = kfile_read(infile, bytes_read, buffer, page_size);
-	bytes_write = kfile_write(outfile,  bytes_read, buffer, page_size);
-
+	printk(KERN_CRIT "bytes_read after call: %d\n", bytes_read);
+	printk(KERN_CRIT "bytes_write before call: %d\n", bytes_write);
+	bytes_write = kfile_write(outfile,  bytes_write, buffer, page_size);
+	printk(KERN_CRIT "bytes_write after call: %d\n", bytes_write);
 			kfree(k_args); kfree(k_keybuf);
 			kfree(k_infile); kfree(k_outfile);
 			kfree(buffer);
@@ -240,6 +244,7 @@ asmlinkage int sys_xcrypt(void *args){
 	/* --- Main I/O loop --- */
 	bytes_read = -1;
 	while(bytes_read != 0){
+		bytes_read = 0;
 		bytes_read = kfile_read(infile, bytes_read, buffer, page_size);
 		if(bytes_read == -1){
 			// Partial read encountered
