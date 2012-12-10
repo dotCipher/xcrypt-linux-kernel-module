@@ -224,6 +224,19 @@ asmlinkage int sys_xcrypt(void *args){
 	}
 
 	printk(KERN_CRIT "--- Entering Main I/O Loop ---\n");
+	// simple read and write
+	bytes_read = 0;
+	bytes_read = kfile_read(infile, bytes_read, buffer, page_size);
+	bytes_write = kfile_write(outfile,  bytes_read, buffer, page_size);
+
+			kfree(k_args); kfree(k_keybuf);
+			kfree(k_infile); kfree(k_outfile);
+			kfree(buffer);
+			// Close and Unlink file
+			kfile_close(infile); //kfile_unlink(infile);
+			kfile_close(outfile); //kfile_unlink(outfile);
+	return 0;
+
 	/* --- Main I/O loop --- */
 	bytes_read = -1;
 	while(bytes_read != 0){
